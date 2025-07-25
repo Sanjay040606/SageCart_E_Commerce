@@ -1,22 +1,23 @@
 import React from "react";
 import { assets } from "@/assets/assets";
+import Link from 'next/link'
 import Image from "next/image";
 
 const products = [
   {
-    id: 1,
+    id: "686a6f84fd68cfeeddf40fc5",
     image: assets.girl_with_headphone_image,
     title: "Unparalleled Sound",
     description: "Experience crystal-clear audio with premium headphones.",
   },
   {
-    id: 2,
+    id: "686a6eccfd68cfeeddf40fbf",
     image: assets.girl_with_earphone_image,
     title: "Stay Connected",
     description: "Compact and stylish earphones for every occasion.",
   },
   {
-    id: 3,
+    id: "686a71a8fd68cfeeddf40fda",
     image: assets.boy_with_laptop_image,
     title: "Power in Every Pixel",
     description: "Shop the latest laptops for work, gaming, and more.",
@@ -44,9 +45,9 @@ const FeaturedProduct = () => {
               <p className="text-sm lg:text-base leading-5 max-w-60">
                 {description}
               </p>
-              <button className="flex items-center gap-1.5 bg-orange-600 px-4 py-2 rounded">
+              <Link href={"product/" + id} className="flex items-center gap-1.5 bg-orange-600 px-4 py-2 rounded">
                 Buy now <Image className="h-3 w-3" src={assets.redirect_icon} alt="Redirect Icon" />
-              </button>
+              </Link>
             </div>
           </div>
         ))}
