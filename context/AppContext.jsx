@@ -85,6 +85,8 @@ export const AppContextProvider = (props) => {
             } catch (error) {
                 toast.error(error.message)
             }
+        } else {
+            toast.error("Not logged in")
         }
 
     }
