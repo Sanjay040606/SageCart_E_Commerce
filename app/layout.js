@@ -7,15 +7,15 @@ import { ClerkProvider } from "@clerk/nextjs";
 const outfit = Outfit({ subsets: ['latin'], weight: ["300", "400", "500"] })
 
 export const metadata = {
-  title: "QuickCart",
-  description: "E-Commerce with Next.js ",
+  title: "SageCart",
+  description: "A calm, modern storefront for curated everyday shopping.",
 };
 
 export default function RootLayout({ children }) {
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className={`${outfit.className} antialiased text-gray-700`} >
+        <body className={`${outfit.className} antialiased app-shell text-[var(--ink-700)]`} >
           <Toaster />
           <AppContextProvider>
             {children}

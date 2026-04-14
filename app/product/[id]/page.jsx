@@ -8,13 +8,17 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import Loading from "@/components/Loading";
 import { useAppContext } from "@/context/AppContext";
+import { useClerk } from "@clerk/nextjs";
+import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
+import toast from 'react-hot-toast'
 import React from "react";
 
 const Product = () => {
 
     const { id } = useParams();
 
-    const { products, router, addToCart } = useAppContext()
+    const { products, router, addToCart, currency, user } = useAppContext()
+    const { openSignIn } = useClerk()
 
     const [mainImage, setMainImage] = useState(null);
     const [productData, setProductData] = useState(null);
@@ -23,6 +27,22 @@ const Product = () => {
         const product = products.find(product => product._id === id);
         setProductData(product);
     }
+
+    const getStatusDisplay = (status, stock) => {
+        switch (status) {
+            case 'out_of_stock':
+                return { text: 'Out of Stock', color: 'text-red-600', bgColor: 'bg-red-50' }
+            case 'low_stock':
+                return { text: `Only ${stock} left in stock`, color: 'text-[var(--accent-strong)]', bgColor: 'bg-[var(--accent-tint)]' }
+            case 'inactive':
+                return { text: 'Currently Unavailable', color: 'text-gray-600', bgColor: 'bg-gray-50' }
+            default:
+                return null
+        }
+    }
+
+    const statusInfo = productData ? getStatusDisplay(productData.status, productData.stock) : null
+    const isAvailable = productData && (productData.status === 'active' || productData.status === 'low_stock')
 
     useEffect(() => {
         fetchProductData();
@@ -84,10 +104,17 @@ const Product = () => {
                     <p className="text-gray-600 mt-3">
                         {productData.description}
                     </p>
+
+                    {statusInfo && (
+                        <div className={`px-4 py-2 rounded-lg text-sm font-medium ${statusInfo.color} ${statusInfo.bgColor} mt-4`}>
+                            {statusInfo.text}
+                        </div>
+                    )}
+
                     <p className="text-3xl font-medium mt-6">
-                        ${productData.offerPrice}
+                        {formatPrice(convertUSDToINR(productData.offerPrice), currency)}
                         <span className="text-base font-normal text-gray-800/60 line-through ml-2">
-                            ${productData.price}
+                            {formatPrice(convertUSDToINR(productData.price), currency)}
                         </span>
                     </p>
                     <hr className="bg-gray-600 my-6" />
@@ -112,20 +139,59 @@ const Product = () => {
                         </table>
                     </div>
 
-                    <div className="flex items-center mt-10 gap-4">
-                        <button onClick={() => addToCart(productData._id)} className="w-full py-3.5 bg-gray-100 text-gray-800/80 hover:bg-gray-200 transition">
-                            Add to Cart
+                    <div className="bg-gray-50 border border-[var(--line-soft)] rounded p-3 mt-5">
+                        <p className="text-sm font-semibold">Product Promo Code</p>
+                        <p className="text-gray-700">{productData.promoCode || 'No promo code available'}</p>
+                        <p className="text-xs text-gray-500 mt-1">Use this code at checkout for 10% off this product plus free shipping</p>
+                    </div>
+
+                    <div className="bg-green-50 border border-green-200 rounded p-3 mt-3">
+                        <p className="text-sm font-semibold text-green-800">💳 Payment Discount Offer</p>
+                        <p className="text-green-700">Get ₹60 off when you pay using UPI or Card!</p>
+                        <p className="text-xs text-green-600 mt-1">Available at checkout for all products</p>
+                    </div>
+                    <div className="flex items-center mt-4 gap-4">
+                        <button
+                            onClick={() => addToCart(productData._id)}
+                            disabled={!isAvailable}
+                            className={`w-full py-3.5 text-gray-800/80 transition ${
+                                isAvailable
+                                    ? 'bg-gray-100 hover:bg-gray-200'
+                                    : 'bg-gray-200 cursor-not-allowed opacity-50'
+                            }`}
+                        >
+                            {isAvailable ? 'Add to Cart' : 'Out of Stock'}
                         </button>
-                        <button onClick={() => { addToCart(productData._id); router.push('/cart') }} className="w-full py-3.5 bg-orange-500 text-white hover:bg-orange-600 transition">
-                            Buy now
+                        <button
+                            onClick={() => {
+                                if (!user) {
+                                    toast.error('Please log in to buy this product.');
+                                    openSignIn();
+                                    return;
+                                }
+                                if (!isAvailable) {
+                                    toast.error('This product is currently unavailable.');
+                                    return;
+                                }
+                                addToCart(productData._id);
+                                router.push('/cart');
+                            }}
+                            disabled={!isAvailable}
+                            className={`brand-button w-full py-3.5 transition ${
+                                isAvailable
+                                    ? ''
+                                    : 'opacity-50 cursor-not-allowed'
+                            }`}
+                        >
+                            {isAvailable ? 'Buy now' : 'Unavailable'}
                         </button>
                     </div>
                 </div>
             </div>
             <div className="flex flex-col items-center">
                 <div className="flex flex-col items-center mb-4 mt-16">
-                    <p className="text-3xl font-medium">Featured <span className="font-medium text-orange-600">Products</span></p>
-                    <div className="w-28 h-0.5 bg-orange-600 mt-2"></div>
+                    <p className="text-3xl font-medium">Featured <span className="font-medium text-[var(--accent-strong)]">Products</span></p>
+                    <div className="w-28 h-0.5 bg-[var(--accent)] mt-2"></div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 mt-6 pb-14 w-full">
                     {products.slice(0, 5).map((product, index) => <ProductCard key={index} product={product} />)}

@@ -1,4 +1,6 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+## SageCart
+
+SageCart is a calmer e-commerce storefront built with Next.js, Clerk, MongoDB, and Inngest. It includes order tracking, return and refund flows, seller tools, and transactional email support.
 
 ## Getting Started
 
@@ -16,9 +18,31 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Email Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+To enable contact, welcome, order, delivery, and refund emails, add these SMTP variables to your `.env`:
+
+```env
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+MAIL_FROM=
+CONTACT_RECEIVER_EMAIL=sagecart.support@gmail.com
+```
+
+Contact form emails are sent to `sagecart.support@gmail.com`, with the customer email set as the reply address.
+
+## Features
+
+- SageCart branding and subtle sage-toned UI
+- Clerk authentication
+- Product browsing and cart
+- Order timeline, delivery, return, and refund tracking
+- Contact form mail delivery
+- Welcome, order confirmation, delivery, and refund emails
+- Seller dashboard and seller order views
 
 ## Learn More
 

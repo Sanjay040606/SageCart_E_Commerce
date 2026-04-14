@@ -1,5 +1,6 @@
 'use client'
 import { productsDummyData, userDummyData } from "@/assets/assets";
+import { convertUSDToINR } from "@/lib/currencyUtils";
 import { useAuth, useUser } from "@clerk/nextjs";
 import axios from "axios";
 import { useRouter } from "next/navigation";
@@ -21,9 +22,13 @@ export const AppContextProvider = (props) => {
     const { getToken } = useAuth()
 
     const [products, setProducts] = useState([])
+    const [productsLoading, setProductsLoading] = useState(true)
     const [userData, setUserData] = useState(false)
     const [isSeller, setIsSeller] = useState(false)
     const [cartItems, setCartItems] = useState({})
+
+    const [chatMessages, setChatMessages] = useState(null)
+    const [isChatOpen, setIsChatOpen] = useState(false)
 
     const fetchProductData = async () => {
         
@@ -33,12 +38,15 @@ export const AppContextProvider = (props) => {
 
             if(data.success){
                 setProducts(data.products)
+                setProductsLoading(false)
             } else {
                 toast.error(data.message)
+                setProductsLoading(false)
             }
 
         } catch (error) {
             toast.error(error.message)
+            setProductsLoading(false)
         }
 
     }
@@ -69,6 +77,14 @@ export const AppContextProvider = (props) => {
     const addToCart = async (itemId) => {
 
         let cartData = structuredClone(cartItems);
+        const currentQty = cartData[itemId] ?? 0;
+        const product = products.find((item) => item._id === itemId);
+
+        if (product && currentQty >= product.stock) {
+            toast.error(`Only ${product.stock} items are available in stock.`)
+            return;
+        }
+
         if (cartData[itemId]) {
             cartData[itemId] += 1;
         }
@@ -94,10 +110,20 @@ export const AppContextProvider = (props) => {
     const updateCartQuantity = async (itemId, quantity) => {
 
         let cartData = structuredClone(cartItems);
-        if (quantity === 0) {
+        const product = products.find((item) => item._id === itemId);
+        const safeQuantity = Number.isNaN(Number(quantity)) ? 0 : Number(quantity);
+        const maxQuantity = product ? product.stock : Infinity;
+
+        if (safeQuantity > maxQuantity) {
+            toast.error(`Only ${maxQuantity} items are available in stock.`)
+        }
+
+        const finalQuantity = Math.min(Math.max(safeQuantity, 0), maxQuantity);
+
+        if (finalQuantity === 0) {
             delete cartData[itemId];
         } else {
-            cartData[itemId] = quantity;
+            cartData[itemId] = finalQuantity;
         }
         setCartItems(cartData)
         if (user) {
@@ -129,7 +155,10 @@ export const AppContextProvider = (props) => {
                 totalAmount += itemInfo.offerPrice * cartItems[items];
             }
         }
-        return Math.floor(totalAmount * 100) / 100;
+
+        // Convert total USD amount into INR before returning
+        const inrAmount = convertUSDToINR(Math.floor(totalAmount * 100) / 100);
+        return Math.floor(inrAmount * 100) / 100;
     }
 
     useEffect(() => {
@@ -147,10 +176,12 @@ export const AppContextProvider = (props) => {
         currency, router,
         isSeller, setIsSeller,
         userData, fetchUserData,
-        products, fetchProductData,
+        products, productsLoading, fetchProductData,
         cartItems, setCartItems,
         addToCart, updateCartQuantity,
-        getCartCount, getCartAmount
+        getCartCount, getCartAmount,
+        chatMessages, setChatMessages,
+        isChatOpen, setIsChatOpen
     }
 
     return (

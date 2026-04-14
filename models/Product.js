@@ -8,6 +8,13 @@ const productSchema = new mongoose.Schema({
     offerPrice: { type: Number, required: true},
     image: { type: Array, required: true},
     category: { type: String, required: true},
+    promoCode: { type: String, sparse: true, unique: true, uppercase: true, trim: true },
+    stock: { type: Number, default: 0, min: 0 },
+    status: {
+        type: String,
+        enum: ['active', 'inactive', 'out_of_stock', 'low_stock'],
+        default: 'active'
+    },
     date: {type: Number , required: true}
 })
 

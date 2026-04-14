@@ -2,10 +2,27 @@ import React from 'react'
 import { assets } from '@/assets/assets'
 import Image from 'next/image';
 import { useAppContext } from '@/context/AppContext';
+import { convertUSDToINR, formatPrice } from '@/lib/currencyUtils';
 
 const ProductCard = ({ product }) => {
 
     const { currency, router } = useAppContext()
+
+    const getStatusDisplay = (status, stock) => {
+        switch (status) {
+            case 'out_of_stock':
+                return { text: 'Out of Stock', color: 'text-red-600', bgColor: 'bg-red-50' }
+            case 'low_stock':
+                return { text: `Only ${stock} left`, color: 'text-[var(--accent-strong)]', bgColor: 'bg-[var(--accent-tint)]' }
+            case 'inactive':
+                return { text: 'Unavailable', color: 'text-gray-600', bgColor: 'bg-gray-50' }
+            default:
+                return null
+        }
+    }
+
+    const statusInfo = getStatusDisplay(product.status, product.stock)
+    const isAvailable = product.status === 'active' || product.status === 'low_stock'
 
     return (
         <div
@@ -31,6 +48,13 @@ const ProductCard = ({ product }) => {
 
             <p className="md:text-base font-medium pt-2 w-full truncate">{product.name}</p>
             <p className="w-full text-xs text-gray-500/70 max-sm:hidden truncate">{product.description}</p>
+
+            {statusInfo && (
+                <div className={`px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color} ${statusInfo.bgColor} w-full text-center`}>
+                    {statusInfo.text}
+                </div>
+            )}
+
             <div className="flex items-center gap-2">
                 <p className="text-xs">{4.5}</p>
                 <div className="flex items-center gap-0.5">
@@ -50,8 +74,11 @@ const ProductCard = ({ product }) => {
             </div>
 
             <div className="flex items-end justify-between w-full mt-1">
-                <p className="text-base font-medium">{currency}{product.offerPrice}</p>
-                <button className=" max-sm:hidden px-4 py-1.5 text-gray-500 border border-gray-500/20 rounded-full text-xs hover:bg-slate-50 transition">
+                <p className="text-base font-medium">{formatPrice(convertUSDToINR(product.offerPrice), currency)}</p>
+                <button
+                    className={`max-sm:hidden px-4 py-1.5 text-gray-500 border border-gray-500/20 rounded-full text-xs hover:bg-slate-50 transition ${!isAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={!isAvailable}
+                >
                     Buy now
                 </button>
             </div>

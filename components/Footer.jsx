@@ -1,55 +1,47 @@
 import React from "react";
-import { assets } from "@/assets/assets";
+import Link from "next/link";
 import Image from "next/image";
+import { assets } from "@/assets/assets";
 
 const Footer = () => {
   return (
-    <footer>
-      <div className="flex flex-col md:flex-row items-start justify-center px-6 md:px-16 lg:px-32 gap-10 py-14 border-b border-gray-500/30 text-gray-500">
-        <div className="w-4/5">
-          <Image className="w-28 md:w-32" src={assets.logo} alt="logo" />
-          <p className="mt-6 text-sm">
-            Quick Cart keeps your shopping smooth and easy.
-            See what’s in your bag at any time, right from the footer.
-            Add, remove, or update items without leaving the page.
-            Jump to checkout whenever you’re ready.
-            Shop smart — your cart is always just a click away!
-          </p>
-        </div>
+    <footer className="mt-16 px-6 md:px-16 lg:px-32 pb-8">
+      <div className="brand-surface rounded-[2rem] px-8 md:px-12 py-12">
+        <div className="flex flex-col md:flex-row items-start justify-between gap-10 border-b border-[var(--line-soft)] pb-10">
+          <div className="max-w-md">
+            <div className="flex items-center gap-3">
+              <Image src={assets.logo} alt="SageCart Logo" width={160} height={50} className="object-contain" priority />
+            </div>
+            <p className="mt-5 text-sm leading-6 text-[var(--ink-500)]">
+              SageCart is a softer shopping experience for thoughtful buys, calmer browsing,
+              and a storefront that feels more personal than generic.
+            </p>
+          </div>
 
-        <div className="w-1/2 flex items-center justify-start md:justify-center">
           <div>
-            <h2 className="font-medium text-gray-900 mb-5">Company</h2>
-            <ul className="text-sm space-y-2">
-              <li>
-                <a className="hover:underline transition" href="#">Home</a>
-              </li>
-              <li>
-                <a className="hover:underline transition" href="#">About us</a>
-              </li>
-              <li>
-                <a className="hover:underline transition" href="#">Contact us</a>
-              </li>
-              <li>
-                <a className="hover:underline transition" href="#">Privacy policy</a>
-              </li>
+            <h3 className="font-medium text-[var(--ink-900)] mb-4">Explore</h3>
+            <ul className="space-y-2 text-sm text-[var(--ink-500)]">
+              <li><Link className="hover:text-[var(--ink-900)] transition" href="/">Home</Link></li>
+              <li><Link className="hover:text-[var(--ink-900)] transition" href="/all-products">Shop</Link></li>
+              <li><Link className="hover:text-[var(--ink-900)] transition" href="/about">About</Link></li>
+              <li><Link className="hover:text-[var(--ink-900)] transition" href="/contact">Contact</Link></li>
             </ul>
           </div>
-        </div>
 
-        <div className="w-1/2 flex items-start justify-start md:justify-center">
           <div>
-            <h2 className="font-medium text-gray-900 mb-5">Get in touch</h2>
-            <div className="text-sm space-y-2">
-              <p>8939813675</p>
-              <p>sanjay060406@gmail.com</p>
+            <h3 className="font-medium text-[var(--ink-900)] mb-4">Support</h3>
+            <div className="space-y-2 text-sm text-[var(--ink-500)]">
+              <p>sagecart.support@gmail.com</p>
+              <p>Mon - Sat, 9:00 AM to 7:00 PM</p>
+              <p>Designed for your own storefront refresh</p>
             </div>
           </div>
         </div>
+
+        <p className="pt-5 text-center text-xs md:text-sm text-[var(--ink-500)]">
+          Copyright 2026 © SageCart. All rights reserved.
+        </p>
       </div>
-      <p className="py-4 text-center text-xs md:text-sm">
-        Copyright 2025 © Sanjay All Right Reserved.
-      </p>
     </footer>
   );
 };

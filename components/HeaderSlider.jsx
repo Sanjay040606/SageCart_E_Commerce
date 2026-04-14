@@ -55,18 +55,18 @@ const HeaderSlider = () => {
         {sliderData.map((slide, index) => (
           <div
             key={slide.id}
-            className="flex flex-col-reverse md:flex-row items-center justify-between bg-[#E6E9F2] py-8 md:px-14 px-5 mt-6 rounded-xl min-w-full"
+            className="flex flex-col-reverse md:flex-row items-center justify-between bg-[linear-gradient(135deg,#f7f4ec_0%,#e8eee3_100%)] border border-[var(--line-soft)] py-8 md:px-14 px-5 mt-6 rounded-[2rem] min-w-full shadow-[0_18px_40px_rgba(77,87,74,0.08)]"
           >
             <div className="md:pl-8 mt-10 md:mt-0">
-              <p className="md:text-base text-orange-600 pb-1">{slide.offer}</p>
-              <h1 className="max-w-lg md:text-[40px] md:leading-[48px] text-2xl font-semibold">
+              <p className="md:text-base text-[var(--accent-strong)] pb-1 uppercase tracking-[0.2em] text-xs md:text-sm">{slide.offer}</p>
+              <h1 className="max-w-lg md:text-[40px] md:leading-[48px] text-2xl font-semibold text-[var(--ink-900)]">
                 {slide.title}
               </h1>
               <div className="flex items-center mt-4 md:mt-6 ">
-                <Link href={"product/" + slide.id} className="md:px-10 px-7 md:py-2.5 py-2 bg-orange-600 rounded-full text-white font-medium">
+                <Link href={"product/" + slide.id} className="brand-button md:px-10 px-7 md:py-2.5 py-2 rounded-full font-medium">
                   {slide.buttonText1}
                 </Link>
-                <Link href="/all-products" className="group flex items-center gap-2 px-6 py-2.5 font-medium">
+                <Link href="/all-products" className="group flex items-center gap-2 px-6 py-2.5 font-medium text-[var(--ink-700)]">
                   {slide.buttonText2}
                   <Image className="group-hover:translate-x-1 transition" src={assets.arrow_icon} alt="arrow_icon" />
                 </Link>
@@ -89,7 +89,7 @@ const HeaderSlider = () => {
             key={index}
             onClick={() => handleSlideChange(index)}
             className={`h-2 w-2 rounded-full cursor-pointer ${
-              currentSlide === index ? "bg-orange-600" : "bg-gray-500/30"
+              currentSlide === index ? "bg-[var(--accent)]" : "bg-[var(--line-soft)]"
             }`}
           ></div>
         ))}

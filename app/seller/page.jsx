@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useAppContext } from "@/context/AppContext";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { convertINRToUSD } from "@/lib/currencyUtils";
 
 const AddProduct = () => {
 
@@ -16,17 +17,23 @@ const AddProduct = () => {
   const [category, setCategory] = useState('Earphone');
   const [price, setPrice] = useState('');
   const [offerPrice, setOfferPrice] = useState('');
+  const [stock, setStock] = useState('');
+  const [promoCode, setPromoCode] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsUploading(true);
 
     const formData = new FormData()
 
     formData.append('name',name)
     formData.append('description',description)
     formData.append('category',category)
-    formData.append('price',price)
-    formData.append('offerPrice',offerPrice)
+    formData.append('price',convertINRToUSD(price))
+    formData.append('offerPrice',convertINRToUSD(offerPrice))
+    formData.append('stock', stock || '0')
+    formData.append('promoCode',promoCode)
 
     for (let i = 0; i < files.length; i++) {
       formData.append('images',files[i])
@@ -47,6 +54,7 @@ const AddProduct = () => {
         setCategory('Earphone');
         setPrice('');
         setOfferPrice('');
+        setPromoCode('');
 
       } else {
         toast.error(data.message)
@@ -54,6 +62,8 @@ const AddProduct = () => {
 
     } catch (error) {
       toast.error(error.message)
+    } finally {
+      setIsUploading(false);
     }
  
   };
@@ -138,7 +148,7 @@ const AddProduct = () => {
           </div>
           <div className="flex flex-col gap-1 w-32">
             <label className="text-base font-medium" htmlFor="product-price">
-              Product Price
+              Product Price (₹)
             </label>
             <input
               id="product-price"
@@ -152,7 +162,7 @@ const AddProduct = () => {
           </div>
           <div className="flex flex-col gap-1 w-32">
             <label className="text-base font-medium" htmlFor="offer-price">
-              Offer Price
+              Offer Price (₹)
             </label>
             <input
               id="offer-price"
@@ -164,9 +174,36 @@ const AddProduct = () => {
               required
             />
           </div>
+          <div className="flex flex-col gap-1 w-32">
+            <label className="text-base font-medium" htmlFor="stock-count">
+              Stock Quantity
+            </label>
+            <input
+              id="stock-count"
+              type="number"
+              min="0"
+              placeholder="0"
+              className="outline-none md:py-2.5 py-2 px-3 rounded border border-gray-500/40"
+              onChange={(e) => setStock(e.target.value)}
+              value={stock}
+            />
+          </div>
         </div>
-        <button type="submit" className="px-8 py-2.5 bg-orange-600 text-white font-medium rounded">
-          ADD
+        <div className="flex flex-col gap-1 max-w-md">
+          <label className="text-base font-medium" htmlFor="product-promo-code">
+            Product Promo Code <span className="text-gray-500 text-sm">(Optional)</span>
+          </label>
+          <input
+            id="product-promo-code"
+            type="text"
+            placeholder="e.g. SPECIAL10 (leave empty if no coupon)"
+            className="outline-none md:py-2.5 py-2 px-3 rounded border border-gray-500/40"
+            value={promoCode}
+            onChange={(e) => setPromoCode(e.target.value)}
+          />
+        </div>
+        <button type="submit" disabled={isUploading} className="brand-button px-8 py-2.5 font-medium rounded disabled:opacity-60 disabled:cursor-not-allowed">
+          {isUploading ? 'Uploading Product...' : 'ADD'}
         </button>
       </form>
       {/* <Footer /> */}
