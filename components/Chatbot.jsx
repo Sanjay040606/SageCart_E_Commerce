@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
@@ -210,7 +211,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, orderId = null, 
     return false
   })
 
-  const messages = globalMessages || []
+  const messages = useMemo(() => globalMessages || [], [globalMessages])
   const setMessages = setGlobalMessages
 
   const isOpen = isHelpPage ? true : globalIsOpen
@@ -450,7 +451,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, orderId = null, 
     if (!hasWelcome) {
       setMessages(welcomeMessage)
     }
-  }, [user, messages, welcomeMessage])
+  }, [messages, setMessages, user, welcomeMessage])
 
   useEffect(() => {
     const container = messageAreaRef.current
@@ -731,3 +732,5 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, orderId = null, 
 }
 
 export default Chatbot
+
+

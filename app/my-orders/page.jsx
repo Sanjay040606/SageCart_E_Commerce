@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { assets } from "@/assets/assets";
 import Image from "next/image";
 import { useAppContext } from "@/context/AppContext";
@@ -118,7 +118,7 @@ const MyOrders = () => {
         return ((idx + 1) / steps.length) * 100
     }
 
-    const fetchOrders = async () => {
+    const fetchOrders = useCallback(async () => {
         try {
             
             const token = await getToken()
@@ -138,13 +138,13 @@ const MyOrders = () => {
         } finally {
             setLoading(false)
         }
-    }
+    }, [getToken])
 
     useEffect(() => {
         if (user) {
             fetchOrders();
         }
-    }, [user]);
+    }, [fetchOrders, user]);
 
     useEffect(() => {
         if (!loading && orders.length > 0) {
@@ -250,3 +250,7 @@ const MyOrders = () => {
 };
 
 export default MyOrders;
+
+
+
+

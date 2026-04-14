@@ -17,7 +17,7 @@ import {
 } from '@/lib/orderLifecycle'
 import axios from 'axios'
 import Image from 'next/image'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
@@ -92,7 +92,7 @@ const OrderDetail = () => {
   const [progress, setProgress] = useState(0)
   const [actionLoading, setActionLoading] = useState(false)
 
-  const fetchOrder = async (showLoader = true) => {
+  const fetchOrder = useCallback(async (showLoader = true) => {
     try {
       if (showLoader) setLoading(true)
       const token = await getToken()
@@ -133,7 +133,7 @@ const OrderDetail = () => {
     } finally {
       if (showLoader) setLoading(false)
     }
-  }
+  }, [getToken, id, router])
 
   useEffect(() => {
     if (!id) {
@@ -142,7 +142,7 @@ const OrderDetail = () => {
     }
 
     fetchOrder()
-  }, [getToken, id, router])
+  }, [fetchOrder, id])
 
   // Periodic sync to keep order status updated with current time
   useEffect(() => {
@@ -544,3 +544,7 @@ const OrderDetail = () => {
 }
 
 export default OrderDetail
+
+
+
+

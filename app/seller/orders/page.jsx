@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { assets } from "@/assets/assets";
 import Image from "next/image";
 import { useAppContext } from "@/context/AppContext";
@@ -34,7 +34,7 @@ const Orders = () => {
         }
         setAnimationReady(false);
     }, [loading, orders.length]);
-    const fetchSellerOrders = async () => {
+    const fetchSellerOrders = useCallback(async () => {
         try {
             
             const token = await getToken()
@@ -51,13 +51,13 @@ const Orders = () => {
         } catch (error) {
             toast.error(error.message)
         }
-    }
+    }, [getToken])
 
     useEffect(() => {
         if (user) {
             fetchSellerOrders();
         }
-    }, [user]);
+    }, [fetchSellerOrders, user]);
 
     return (
         <div className="flex-1 h-screen overflow-scroll flex flex-col justify-between text-sm">
@@ -129,3 +129,9 @@ const Orders = () => {
 };
 
 export default Orders;
+
+
+
+
+
+

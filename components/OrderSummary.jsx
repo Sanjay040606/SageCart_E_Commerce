@@ -3,7 +3,7 @@ import { useAppContext } from "@/context/AppContext";
 import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
 import { getGamePromo, getUnusedUserGameCoupon, normalizePromoCode } from "@/lib/promoCodes";
 import axios from "axios";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
 const OrderSummary = () => {
@@ -21,7 +21,7 @@ const OrderSummary = () => {
 
   const SHIPPING_DEFAULT = 50;
 
-  const fetchUserAddresses = async () => {
+  const fetchUserAddresses = useCallback(async () => {
     try {
       
       const token = await getToken()
@@ -38,7 +38,7 @@ const OrderSummary = () => {
     } catch (error) {
       toast.error(error.message)
     }
-  }
+  }, [getToken])
 
   const handleAddressSelect = (address) => {
     setSelectedAddress(address);
@@ -246,7 +246,7 @@ const OrderSummary = () => {
     if (user) {
       fetchUserAddresses();
     }
-  }, [user])
+  }, [fetchUserAddresses, user])
 
   if (cartProducts.length === 0) {
     return (
@@ -425,3 +425,4 @@ const OrderSummary = () => {
 };
 
 export default OrderSummary;
+

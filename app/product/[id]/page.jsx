@@ -23,10 +23,6 @@ const Product = () => {
     const [mainImage, setMainImage] = useState(null);
     const [productData, setProductData] = useState(null);
 
-    const fetchProductData = async () => {
-        const product = products.find(product => product._id === id);
-        setProductData(product);
-    }
 
     const getStatusDisplay = (status, stock) => {
         switch (status) {
@@ -45,8 +41,9 @@ const Product = () => {
     const isAvailable = productData && (productData.status === 'active' || productData.status === 'low_stock')
 
     useEffect(() => {
-        fetchProductData();
-    }, [id, products.length])
+        const product = products.find((item) => item._id === id);
+        setProductData(product || null);
+    }, [id, products])
 
     return productData ? (<>
         <Navbar />
