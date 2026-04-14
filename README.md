@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ## SageCart
 
 SageCart is a calmer e-commerce storefront built with Next.js, Clerk, MongoDB, and Inngest. It includes order tracking, return and refund flows, seller tools, and transactional email support.
@@ -58,3 +59,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+=======
+# SageCart_E_Commerce
+SageCart is a modern, full-stack e-commerce platform built with Next.js. It features seller dashboards for product management, user cart and order processing, payment integration and a responsive UI with Tailwind CSS. Includes API routes for CRUD operations, authentication, and inventory tracking. Perfect for small to medium online stores. 
+>>>>>>> d79be9004e6e08ee19f13b86cd70dae0f84ec1a1
