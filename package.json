@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "node scripts/dev-server.js",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -11,8 +11,8 @@
   "dependencies": {
     "@clerk/nextjs": "^6.23.2",
     "axios": "^1.10.0",
-    "cloudinary": "^2.7.0",
-    "inngest": "^3.40.0",
+    "cloudinary": "^2.10.0",
+    "inngest": "^3.54.0",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "mongoose": "^8.16.1",
