@@ -7,6 +7,26 @@ import Image from "next/image";
 import { useClerk, UserButton } from "@clerk/nextjs";
 import axios from "axios";
 
+const userButtonAppearance = {
+  elements: {
+    userButtonPopoverRootBox: {
+      maxHeight: 'calc(100dvh - 1rem)',
+      maxWidth: 'calc(100vw - 1rem)',
+    },
+    userButtonPopoverCard: {
+      maxHeight: 'calc(100dvh - 1rem)',
+      maxWidth: 'min(22rem, calc(100vw - 1rem))',
+      overflowY: 'auto',
+      overscrollBehavior: 'contain',
+      WebkitOverflowScrolling: 'touch',
+    },
+    userButtonPopoverMain: {
+      maxHeight: 'calc(100dvh - 7rem)',
+      overflowY: 'auto',
+    },
+  }
+}
+
 const Navbar = () => {
   const { isSeller, router, user, currency } = useAppContext();
   const { openSignIn } = useClerk();
@@ -163,7 +183,7 @@ const Navbar = () => {
           )}
 
           {user ? (
-            <UserButton>
+            <UserButton appearance={userButtonAppearance}>
               <UserButton.MenuItems>
                 <UserButton.Action label="Home" labelIcon={<HomeIcon />} onClick={() => router.push('/')} />
                 <UserButton.Action label="Shop" labelIcon={<BoxIcon />} onClick={() => router.push('/all-products')} />

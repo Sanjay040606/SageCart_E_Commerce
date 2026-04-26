@@ -12,6 +12,13 @@ import Chatbot from "@/components/Chatbot";
 import axios from "axios";
 import toast from "react-hot-toast";
 import {
+    getOrderPaymentStateClass,
+    getOrderPaymentStateLabel,
+    getPrimaryOrderProductLabel,
+    getOrderSummaryStatusClass,
+    getOrderSummaryStatusLabel
+} from "@/lib/orderDisplay";
+import {
     ORDER_STATUSES,
     REFUND_DELAY_HOURS,
     canRequestReturn,
@@ -42,26 +49,7 @@ const MyOrders = () => {
     const [animationReady, setAnimationReady] = useState(false);
 
     const getDisplayStatus = (order) => order?.status || ORDER_STATUSES.CONFIRMED
-
     const getTimelineDate = (order, status) => getTimelineEntry(order, status)?.timestamp || null
-
-    const getOrderPaymentState = (order) => {
-        if (hasCanceledFlow(order)) {
-            return isPrepaidOrder(order)
-                ? (order.status === ORDER_STATUSES.REFUNDED ? 'Refunded' : 'Refund processing')
-                : 'Order canceled'
-        }
-
-        if (hasReturnFlow(order)) {
-            return isPrepaidOrder(order)
-                ? (order.status === ORDER_STATUSES.REFUNDED ? 'Refunded' : 'Refund processing')
-                : 'Paid'
-        }
-
-        if (isPrepaidOrder(order)) return 'Paid'
-        if (order.status === ORDER_STATUSES.DELIVERED || order.deliveredAt) return 'Paid'
-        return 'Pending'
-    }
 
     const getOrderSecondaryText = (order) => {
         const { shippedEta, deliveryEta } = getOrderMilestones(order)
@@ -170,59 +158,59 @@ const MyOrders = () => {
                             <p className="text-sm">Place a test order and it will appear here.</p>
                         </div>
                     ) : (<div className="max-w-5xl border-t border-gray-300 text-sm">
-                        {orders.map((order, index) => (
-                            <div 
-                              key={index} 
-                              onClick={() => router.push(`/order/${order._id}`)}
-                              className="flex flex-col md:flex-row gap-5 justify-between p-5 border-b border-gray-300 cursor-pointer hover:bg-gray-50 transition"
-                            >
-                                <div className="flex-1 flex items-center gap-5">
-                                    <div className='w-16 h-16 rounded-lg overflow-hidden border border-gray-200'>
-                                        <Image
-                                            className='w-full h-full object-cover'
-                                            src={order.items?.[0]?.product?.image?.[0] || assets.box_icon}
-                                            alt={order.items?.[0]?.product?.name || 'Product'}
-                                            width={64}
-                                            height={64}
-                                        />
+                        {orders.map((order) => {
+                            const productLabel = getPrimaryOrderProductLabel(order)
+                            const statusLabel = getOrderSummaryStatusLabel(order)
+                            const paymentState = getOrderPaymentStateLabel(order)
+
+                            return (
+                                <div
+                                  key={order._id}
+                                  onClick={() => router.push(`/order/${order._id}`)}
+                                  className="flex flex-col md:flex-row gap-5 justify-between p-5 border-b border-gray-300 cursor-pointer hover:bg-gray-50 transition"
+                                >
+                                    <div className="flex-1 flex items-center gap-5">
+                                        <div className='w-16 h-16 rounded-lg overflow-hidden border border-gray-200'>
+                                            <Image
+                                                className='w-full h-full object-cover'
+                                                src={order.items?.[0]?.product?.image?.[0] || assets.box_icon}
+                                                alt={order.items?.[0]?.product?.name || 'Product'}
+                                                width={64}
+                                                height={64}
+                                            />
+                                        </div>
+                                        <div>
+                                            <p className='text-sm font-semibold'>{productLabel}</p>
+                                            <p className='text-xs text-gray-500'>Order Date: {new Date(order.date).toLocaleDateString()}</p>
+                                            <p className='text-xs text-gray-500'>Total: {formatPrice(order.amountInr ? order.amountInr : convertUSDToINR(order.amount), currency)}</p>
+                                            {order.items?.[0]?.color && <p className='text-xs text-gray-500'>Color: {order.items[0].color}</p>}
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className='text-sm font-semibold'>Order ID: {order._id}</p>
-                                        <p className='text-xs text-gray-500'>Order Date: {new Date(order.date).toLocaleDateString()}</p>
-                                        <p className='text-xs text-gray-500'>Total: {formatPrice(order.amountInr ? order.amountInr : convertUSDToINR(order.amount), currency)}</p>
-                                        {order.items?.[0]?.color && <p className='text-xs text-gray-500'>Color: {order.items[0].color}</p>}
+                                    <div className='flex-1'>
+                                        <div className='h-2 rounded-full bg-gray-200 overflow-hidden mb-1'>
+                                            <div
+                                                className='h-full bg-green-500'
+                                                style={{
+                                                    width: `${animationReady ? getOrderProgressPercent(order) : 0}%`,
+                                                    transition: [ORDER_STATUSES.CANCELED, ORDER_STATUSES.REFUNDED, ORDER_STATUSES.RETURNED].includes(order.status) ? 'none' : 'width 900ms ease-in-out'
+                                                }}
+                                            />
+                                        </div>
+                                        <p className={`text-sm font-semibold ${getOrderSummaryStatusClass(order)}`}>
+                                            {statusLabel}
+                                        </p>
+                                        <p className='text-xs text-gray-500'>
+                                            {getOrderSecondaryText(order)}
+                                        </p>
+                                    </div>
+                                    <div className='flex flex-col justify-center'>
+                                        <span className={`text-xs ${getOrderPaymentStateClass(order)}`}>
+                                            {paymentState}
+                                        </span>
                                     </div>
                                 </div>
-                                <div className='flex-1'>
-                                                                    <div className='h-2 rounded-full bg-gray-200 overflow-hidden mb-1'>
-                                                                        <div
-                                                                            className='h-full bg-green-500'
-                                                                            style={{
-                                                                                width: `${animationReady ? getOrderProgressPercent(order) : 0}%`,
-                                                                                transition: [ORDER_STATUSES.CANCELED, ORDER_STATUSES.REFUNDED, ORDER_STATUSES.RETURNED].includes(order.status) ? 'none' : 'width 900ms ease-in-out'
-                                                                            }}
-                                                                        />
-                                                                    </div>
-                                                                    <p className='text-sm font-semibold text-gray-700'>
-                                                                        {hasCanceledFlow(order) && isPrepaidOrder(order) && order.status === ORDER_STATUSES.REFUNDED ? 'Canceled and Refunded' :
-                                                                          hasCanceledFlow(order) && isPrepaidOrder(order) ? 'Refund Initiated' :
-                                                                          hasCanceledFlow(order) ? 'Order Canceled' :
-                                                                          hasReturnFlow(order) && order.status === ORDER_STATUSES.REFUNDED ? 'Return Refunded' :
-                                                                          order.status === ORDER_STATUSES.RETURNED ? 'Returned' :
-                                                                          getDisplayStatus(order)
-                                                                        }
-                                                                    </p>
-                                                                    <p className='text-xs text-gray-500'>
-                                                                        {getOrderSecondaryText(order)}
-                                                                    </p>
-                                </div>
-                                <div className='flex flex-col justify-center'>
-                                    <span className={`text-xs ${getOrderPaymentState(order) === 'Paid' ? 'text-green-600 font-medium' : 'text-gray-600'}`}>
-                                        {getOrderPaymentState(order)}
-                                    </span>
-                                </div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>)}
 
                     <div className='bg-white p-6 rounded-lg shadow-sm mt-6'>
