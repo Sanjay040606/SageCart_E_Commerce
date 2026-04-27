@@ -173,9 +173,11 @@ export const PATCH = async (req, { params }) => {
       .populate("items.product", "name image price offerPrice")
       .populate("address", "fullName area city state phoneNumber");
 
-    void sendOrderLifecycleEmailsIfNeeded(emailReadyOrder || order).catch((emailError) => {
+    try {
+      await sendOrderLifecycleEmailsIfNeeded(emailReadyOrder || order);
+    } catch (emailError) {
       console.error("Failed to send order lifecycle email:", emailError);
-    });
+    }
     return Response.json({ success: true, order }, { status: 200 });
   } catch (error) {
     console.log(error);

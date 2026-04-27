@@ -3,6 +3,7 @@ import React from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Chatbot from "@/components/Chatbot";
+import SupportFeedbackBox from "@/components/SupportFeedbackBox";
 
 const values = [
   {
@@ -71,6 +72,13 @@ const About = () => {
             ))}
           </div>
         </div>
+
+        <SupportFeedbackBox
+          pageKey="about"
+          title="What would you change?"
+          subtitle="Share one idea about the brand, layout, or support flow."
+          className="mb-10"
+        />
       </div>
       <Chatbot pageContext="about" />
       <Footer />

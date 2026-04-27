@@ -77,6 +77,22 @@ const Navbar = () => {
     setShowMobileSearch(false);
   };
 
+  const handleSearchToggle = () => {
+    const isMobileView =
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches;
+
+    if (isMobileView) {
+      setShowSearch(false);
+      setShowSuggestions(false);
+      setShowMobileSearch((prev) => !prev);
+      return;
+    }
+
+    setShowMobileSearch(false);
+    setShowSearch((prev) => !prev);
+  };
+
   return (
     <nav className="sticky top-0 z-40 mx-4 mt-4 rounded-full brand-surface px-4 py-3 text-[var(--ink-700)] sm:px-6 md:px-8 lg:px-12">
       <div className="flex items-center justify-between gap-2 sm:gap-3 md:gap-4">
@@ -106,16 +122,17 @@ const Navbar = () => {
         <div className="flex items-center gap-2 sm:gap-3 md:gap-4">
           <div className="relative shrink-0">
             <button
-              onClick={() => setShowSearch((prev) => !prev)}
+              onClick={handleSearchToggle}
               className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line-soft)] bg-white/80 transition hover:bg-[var(--accent-tint)]"
               aria-label="Search products"
               title="Search"
+              aria-expanded={showSearch || showMobileSearch}
             >
               <Image className="w-4 h-4" src={assets.search_icon} alt="search icon" />
             </button>
 
             {showSearch && (
-              <div className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] rounded-[1.5rem] border border-[var(--line-soft)] bg-[var(--bg-panel)] p-3 shadow-xl">
+              <div className="absolute right-0 top-full z-50 mt-3 hidden w-[min(22rem,calc(100vw-2rem))] rounded-[1.5rem] border border-[var(--line-soft)] bg-[var(--bg-panel)] p-3 shadow-xl md:block">
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -218,7 +235,7 @@ const Navbar = () => {
               setShowSuggestions(false)
             }}
           />
-          <div className="absolute left-3 right-3 top-24 rounded-[1.75rem] border border-[var(--line-soft)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,244,236,0.96))] p-4 shadow-[0_30px_80px_rgba(28,38,29,0.25)]">
+          <div className="absolute left-3 right-3 top-20 max-h-[calc(100dvh-6rem)] overflow-hidden rounded-[1.75rem] border border-[var(--line-soft)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,244,236,0.96))] p-4 shadow-[0_30px_80px_rgba(28,38,29,0.25)] sm:top-24">
             <div className="flex items-center justify-between gap-3 pb-3">
               <div>
                 <p className="text-sm font-semibold text-[var(--ink-900)]">Search products</p>
@@ -248,7 +265,7 @@ const Navbar = () => {
               />
             </div>
             {showSuggestions && suggestions.length > 0 && (
-              <div className="mt-3 max-h-[55vh] overflow-y-auto rounded-[1.25rem] border border-[var(--line-soft)] bg-white">
+              <div className="mt-3 max-h-[calc(100dvh-15rem)] overflow-y-auto rounded-[1.25rem] border border-[var(--line-soft)] bg-white">
                 {suggestions.map((product) => (
                   <div
                     key={product._id}

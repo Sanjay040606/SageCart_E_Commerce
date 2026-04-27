@@ -8,7 +8,6 @@ import { assets } from '@/assets/assets'
 import Image from 'next/image'
 import {
   ORDER_STATUSES,
-  REFUND_DELAY_HOURS,
   canCancelOrder,
   canRequestReturn,
   getOrderMilestones,
@@ -16,6 +15,25 @@ import {
   hasReturnFlow,
   isPrepaidOrder
 } from '@/lib/orderLifecycle'
+import { getOrderPaymentStateLabel, getOrderSummaryStatusLabel } from '@/lib/orderDisplay'
+import {
+  SUPPORT_ACTIONS,
+  SUPPORT_ACTION_LABELS,
+  getActionUnavailableReason,
+  getEligibleSupportOrders,
+  getOrderSupportTitle,
+  getRefundSummaryText,
+  getShortOrderId,
+  getSupportActionStatus,
+  getSupportActionSummary
+} from '@/lib/supportCenter'
+import {
+  createSupportHistoryItem,
+  loadSupportHistory,
+  resolveSupportHistoryFromOrders,
+  SUPPORT_HISTORY_EVENT,
+  upsertSupportHistoryItem
+} from '@/lib/supportHistory'
 
 const BOT_NAME = 'Sage Support'
 
@@ -23,62 +41,32 @@ const CONTEXT_CONFIG = {
   'my-orders': {
     title: 'Order Support',
     subtitle: 'Tracking, cancellations, returns, and refunds',
-    quickActions: [
-      'Track my order',
-      'Can I cancel before shipping?',
-      'How do refunds work?',
-      'Return policy'
-    ]
+    quickActions: ['Track order', 'Refund status', 'Cancel order', 'Return order', 'Query history']
   },
   'order-detail': {
     title: 'Delivery Assistant',
     subtitle: 'Updates for this order and after-delivery help',
-    quickActions: [
-      'What does this status mean?',
-      'Can I cancel this order?',
-      'When can I return it?',
-      'Need delivery help'
-    ]
+    quickActions: ['Track order', 'Refund status', 'Cancel order', 'Return order', 'Query history']
   },
   contact: {
     title: 'Contact Support',
     subtitle: 'Fast answers before you send an email',
-    quickActions: [
-      'How can I contact support?',
-      'Response time',
-      'Report an issue',
-      'Business hours'
-    ]
+    quickActions: ['Track order', 'Refund status', 'Cancel order', 'Return order']
   },
   about: {
     title: 'About SageCart',
     subtitle: 'Brand, policies, and how the store works',
-    quickActions: [
-      'What is SageCart?',
-      'What makes SageCart different?',
-      'Payment methods',
-      'Shipping coverage'
-    ]
+    quickActions: ['Track order', 'Refund status', 'Cancel order', 'Return order']
   },
   help: {
     title: 'Support Chat',
     subtitle: 'Ask a question like you would in a real customer chat',
-    quickActions: [
-      'Track my order',
-      'Cancel an order',
-      'Return a product',
-      'Refund status'
-    ]
+    quickActions: ['Track order', 'Refund status', 'Cancel order', 'Return order', 'Query history']
   },
   general: {
     title: 'Shopping Assistant',
     subtitle: 'Account, payments, shipping, and order help',
-    quickActions: [
-      'Payment methods',
-      'Shipping coverage',
-      'Account help',
-      'Talk to support'
-    ]
+    quickActions: ['Track order', 'Refund status', 'Cancel order', 'Return order', 'Query history']
   }
 }
 
@@ -176,8 +164,20 @@ const formatStatusDate = (value) => {
   return parsed.toLocaleDateString('en-GB')
 }
 
+const normalizeCommand = (value) => String(value || '').toLowerCase().trim().replace(/\s+/g, ' ')
+
+const isAffirmative = (value) => {
+  const normalized = normalizeCommand(value)
+  return ['yes', 'confirm', 'confirm cancel', 'confirm return', 'proceed', 'go ahead', 'do it', 'sure'].some((token) => normalized === token || normalized.startsWith(`${token} `))
+}
+
+const isNegative = (value) => {
+  const normalized = normalizeCommand(value)
+  return ['no', 'cancel', 'stop', 'back', 'not now', 'abort', 'keep'].some((token) => normalized === token || normalized.startsWith(`${token} `))
+}
+
 const getIntentId = (input) => {
-  const normalized = input.toLowerCase().trim()
+  const normalized = normalizeCommand(input)
   for (const intent of INTENTS) {
     if (intent.keywords.some((keyword) => normalized.includes(keyword))) {
       return intent.id
@@ -186,7 +186,133 @@ const getIntentId = (input) => {
   return null
 }
 
-const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen = false, orderId = null, initialQuestion = null, initialQuestionKey = 0, helpReturnHref = '/' }) => {
+const isQuestionStyleInput = (value) => {
+  const normalized = normalizeCommand(value)
+  if (!normalized) return false
+
+  return (
+    normalized.endsWith('?')
+    || /^(how|what|why|when|where|who|which|can|could|should|would|do|does|did|is|are|am|will|may|might)\b/.test(normalized)
+    || normalized.includes('how do i')
+    || normalized.includes('how can i')
+    || normalized.includes('what is')
+    || normalized.includes('what are')
+    || normalized.includes('can i')
+  )
+}
+
+const getDefaultActionButtons = () => ([
+  { label: SUPPORT_ACTION_LABELS[SUPPORT_ACTIONS.TRACK], command: 'track order', variant: 'primary' },
+  { label: SUPPORT_ACTION_LABELS[SUPPORT_ACTIONS.REFUND], command: 'refund status', variant: 'primary' },
+  { label: SUPPORT_ACTION_LABELS[SUPPORT_ACTIONS.CANCEL], command: 'cancel order', variant: 'danger' },
+  { label: SUPPORT_ACTION_LABELS[SUPPORT_ACTIONS.RETURN], command: 'return order', variant: 'danger' },
+  { label: 'Query history', command: 'query history', variant: 'neutral' }
+])
+
+const getActionButtonClass = (variant = 'neutral') => {
+  if (variant === 'primary') {
+    return 'border-[var(--accent-strong)] bg-[var(--accent-tint)] text-[var(--ink-900)] hover:bg-[var(--accent)] hover:text-white'
+  }
+
+  if (variant === 'danger') {
+    return 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+  }
+
+  return 'border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--ink-700)] hover:bg-[var(--accent-tint)] hover:text-[var(--ink-900)]'
+}
+
+const getConfirmationButtons = (action, order) => {
+  const confirmLabel = action === SUPPORT_ACTIONS.CANCEL ? 'Confirm cancel' : 'Confirm return'
+  const confirmCommand = `confirm ${action} ${order._id}`
+
+  return [
+    { label: confirmLabel, command: confirmCommand, variant: 'danger' },
+    {
+      label: 'Choose another order',
+      command: `${action} order`,
+      variant: 'neutral'
+    },
+    { label: 'Back to menu', command: 'menu', variant: 'neutral' }
+  ]
+}
+
+const getOrderFromToken = (token, orders = []) => {
+  const normalized = normalizeCommand(token).replace(/^#/, '')
+  if (!normalized) return null
+
+  return orders.find((order) => {
+    const orderId = normalizeCommand(order._id)
+    const shortId = normalizeCommand(getShortOrderId(order._id)).replace(/^#/, '')
+    return orderId === normalized || orderId.endsWith(normalized) || shortId === normalized || shortId.endsWith(normalized)
+  }) || null
+}
+
+const formatOrderLine = (order) => `${getOrderSupportTitle(order)} - ${getOrderSummaryStatusLabel(order)} - ${getOrderPaymentStateLabel(order)}`
+
+const formatOrderDetailLine = (order, action) => {
+  const { shippedEta, deliveryEta, returnDeadline } = getOrderMilestones(order || {})
+
+  if (action === SUPPORT_ACTIONS.TRACK) {
+    if (order?.status === ORDER_STATUSES.DELIVERED) {
+      return `Delivered on ${formatStatusDate(order.deliveredAt)}.`
+    }
+
+    if (order?.status === ORDER_STATUSES.SHIPPED) {
+      return `Shipped on ${formatStatusDate(order.shippedAt || shippedEta)}. Delivery ETA ${formatStatusDate(order.estimatedDeliveryDate || deliveryEta)}.`
+    }
+
+    if (order?.status === ORDER_STATUSES.OUT_FOR_DELIVERY) {
+      return `Out for delivery today. Delivery ETA ${formatStatusDate(order.estimatedDeliveryDate || deliveryEta)}.`
+    }
+
+    return `Shipment ETA ${formatStatusDate(shippedEta)}. Delivery ETA ${formatStatusDate(order.estimatedDeliveryDate || deliveryEta)}.`
+  }
+
+  if (action === SUPPORT_ACTIONS.CANCEL) {
+    if (canCancelOrder(order)) {
+      return 'This order can still be canceled before shipment starts.'
+    }
+
+    if (hasCanceledFlow(order)) {
+      return isPrepaidOrder(order)
+        ? 'This order is already canceled and the refund is processing.'
+        : 'This order is already canceled.'
+    }
+
+    return 'This order cannot be canceled now because shipment has already started.'
+  }
+
+  if (action === SUPPORT_ACTIONS.RETURN) {
+    if (canRequestReturn(order)) {
+      return `Return is available until ${formatStatusDate(returnDeadline)}.`
+    }
+
+    if (hasReturnFlow(order)) {
+      return 'This order is already in the return flow.'
+    }
+
+    return 'Return is not available yet. The order must be delivered first and still be inside the return window.'
+  }
+
+  if (action === SUPPORT_ACTIONS.REFUND) {
+    return getRefundSummaryText(order)
+  }
+
+  return `Current status: ${order?.status || ORDER_STATUSES.CONFIRMED}.`
+}
+
+const formatQueryHistoryText = (entries = []) => {
+  if (!entries.length) {
+    return 'No saved cancel or return requests yet.'
+  }
+
+  return entries.slice(0, 5).map((entry, index) => {
+    const actionLabel = SUPPORT_ACTION_LABELS[entry.action] || entry.action
+    return `${index + 1}. ${actionLabel} for ${entry.productName} ${entry.orderShortId} - ${entry.status} (${formatStatusDate(entry.updatedAt || entry.createdAt)})`
+  }).join('\n')
+}
+
+const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen = false, orderId = null, initialQuestion = null, initialQuestionKey = 0, helpReturnHref = '/', onInitialQuestionConsumed = null }) => {
   const config = CONTEXT_CONFIG[pageContext] || CONTEXT_CONFIG.general
   const messageAreaRef = useRef(null)
   const initialQuestionRef = useRef(0)
@@ -194,18 +320,27 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
   const { openSignIn } = useClerk()
 
   const [globalMessages, setGlobalMessages] = useState(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window === 'undefined') return null
+    try {
       const saved = sessionStorage.getItem('sagecart-messages')
-      if (saved) return JSON.parse(saved)
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
     }
-    return null
   })
   const [globalIsOpen, setGlobalIsOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('sagecart-isopen') === 'true'
-    }
-    return false
+    if (typeof window === 'undefined') return false
+    return sessionStorage.getItem('sagecart-isopen') === 'true'
   })
+  const [orderSupportData, setOrderSupportData] = useState({ orders: [], currentOrder: null })
+  const [supportFlow, setSupportFlow] = useState({
+    stage: 'idle',
+    action: null,
+    eligibleOrders: [],
+    selectedOrderId: null
+  })
+  const [isTyping, setIsTyping] = useState(false)
+  const [userInput, setUserInput] = useState('')
 
   const messages = useMemo(() => globalMessages || [], [globalMessages])
   const setMessages = setGlobalMessages
@@ -216,7 +351,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
     {
       id: 'welcome',
       sender: 'bot',
-      text: `Hello, I'm ${BOT_NAME}. I can help with orders, shipping, refunds, returns, coupons, and account questions.`,
+      text: `Hello${user?.firstName ? ` ${user.firstName}` : ''}, I'm ${BOT_NAME}. I can help with orders, shipping, refunds, returns, coupons, and account questions.`,
       timestamp: new Date().toISOString()
     },
     {
@@ -225,185 +360,25 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
       text: `You're in ${config.title}. Ask a question below or choose one of the quick options to get started.`,
       timestamp: new Date().toISOString()
     }
-  ]), [config.title])
+  ]), [config.title, user?.firstName])
 
-  const [orderSupportData, setOrderSupportData] = useState({ orders: [], currentOrder: null })
-  const [isTyping, setIsTyping] = useState(false)
-  const [awaitingOrderSelection, setAwaitingOrderSelection] = useState(false)
-  const [pendingOrderAction, setPendingOrderAction] = useState(null)
-  const [queryHistory, setQueryHistory] = useState([])
-  const [userInput, setUserInput] = useState('')
+  const refreshOrderSupportData = async (token) => {
+    const { data } = await axios.get('/api/order/list', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
 
-  const getSupportAwareResponse = (input) => {
-    const intentId = getIntentId(input)
-    const activeOrder = orderSupportData.currentOrder || orderSupportData.orders[0] || null
-
-    if (awaitingOrderSelection && input.match(/^\d+$/)) {
-      const orderIndex = parseInt(input, 10) - 1
-      if (orderIndex >= 0 && orderIndex < orderSupportData.orders.length) {
-        const selectedOrder = orderSupportData.orders[orderIndex]
-        setOrderSupportData((prev) => ({ ...prev, currentOrder: selectedOrder }))
-        setAwaitingOrderSelection(false)
-
-        if (pendingOrderAction) {
-          return `Processing ${pendingOrderAction} for order ${selectedOrder._id.slice(-6)}...`
-        }
-
-        return `Selected order ${selectedOrder._id.slice(-6)} (${selectedOrder.items?.[0]?.product?.name || 'Product'}). How can I help with this order?`
-      }
-      return `Please enter a valid order number (1-${orderSupportData.orders.length}).`
+    if (!data.success) {
+      return []
     }
 
-    const orderRelatedIntents = ['track', 'cancel', 'refund', 'return', 'delivery']
-    if (!user && orderRelatedIntents.includes(intentId)) {
-      openSignIn()
-      return 'To answer order-specific requests like tracking, cancellation, refund, or return, please sign in first. The login window has been opened for you.'
-    }
+    const orders = (data.orders || []).slice().sort((a, b) => Number(b.date || 0) - Number(a.date || 0))
+    const currentOrder = orderId
+      ? orders.find((order) => order._id === orderId) || null
+      : orders[0] || null
 
-    if (['cancel', 'return'].includes(intentId) && activeOrder) {
-      setQueryHistory((prev) => [...prev.slice(-4), {
-        intent: intentId,
-        orderId: activeOrder._id,
-        timestamp: new Date().toISOString(),
-        status: activeOrder.status
-      }])
-    }
-
-    if (intentId === 'track' && activeOrder) {
-      const { shippedEta, deliveryEta } = getOrderMilestones(activeOrder)
-      const trackOrderDetails = `Order ${activeOrder._id.slice(-6)}: ${activeOrder.items?.length || 0} item(s) totaling Rs. ${activeOrder.amountInr || activeOrder.amount || 0}`
-
-      if (hasCanceledFlow(activeOrder)) {
-        const refundInfo = isPrepaidOrder(activeOrder)
-          ? ` Refund was initiated on ${formatStatusDate(activeOrder.refundRequestedAt)} and completed on ${formatStatusDate(activeOrder.refundCompletedAt)}.`
-          : ' This was a COD order with no refund required.'
-        return `${trackOrderDetails} - Status: ${activeOrder.status}. Canceled on ${formatStatusDate(activeOrder.canceledAt)}.${refundInfo}`
-      }
-
-      if (hasReturnFlow(activeOrder)) {
-        return `${trackOrderDetails} - Status: ${activeOrder.status}. Return process started. Check the order page for pickup and refund updates.`
-      }
-
-      if (activeOrder.status === ORDER_STATUSES.DELIVERED) {
-        return `${trackOrderDetails} - Delivered on ${formatStatusDate(activeOrder.deliveredAt)}. Return available until ${formatStatusDate(getOrderMilestones(activeOrder).returnDeadline)}.`
-      }
-
-      if (activeOrder.status === ORDER_STATUSES.SHIPPED) {
-        return `${trackOrderDetails} - Shipped on ${formatStatusDate(activeOrder.shippedAt || shippedEta)}. Delivery ETA: ${formatStatusDate(activeOrder.estimatedDeliveryDate || deliveryEta)}.`
-      }
-
-      return `${trackOrderDetails} - Shipment ETA: ${formatStatusDate(shippedEta)}, Delivery ETA: ${formatStatusDate(activeOrder.estimatedDeliveryDate || deliveryEta)}.`
-    }
-
-    if (intentId === 'delivery' && activeOrder) {
-      const { shippedEta, deliveryEta } = getOrderMilestones(activeOrder)
-      const deliveryOrderDetails = `Order ${activeOrder._id.slice(-6)} (${activeOrder.items?.[0]?.product?.name || 'Product'})`
-
-      if (activeOrder.status === ORDER_STATUSES.DELIVERED) {
-        return `${deliveryOrderDetails} was delivered on ${formatStatusDate(activeOrder.deliveredAt)}.`
-      }
-
-      if (activeOrder.status === ORDER_STATUSES.SHIPPED) {
-        return `${deliveryOrderDetails} has been shipped and is expected to be delivered by ${formatStatusDate(activeOrder.estimatedDeliveryDate || deliveryEta)}.`
-      }
-
-      if (activeOrder.status === ORDER_STATUSES.OUT_FOR_DELIVERY) {
-        return `${deliveryOrderDetails} is out for delivery today and should arrive by end of day.`
-      }
-
-      return `${deliveryOrderDetails} - Shipment ETA: ${formatStatusDate(shippedEta)}, Delivery ETA: ${formatStatusDate(activeOrder.estimatedDeliveryDate || deliveryEta)}.`
-    }
-
-    if (intentId === 'cancel' && activeOrder) {
-      const cancelOrderDetails = `Order ${activeOrder._id.slice(-6)} (${activeOrder.items?.[0]?.product?.name || 'Product'})`
-
-      if (canCancelOrder(activeOrder)) {
-        return `Yes, ${cancelOrderDetails} can still be canceled. It hasn't shipped yet. Open the order page and use the Cancel Order button.`
-      }
-
-      if (hasCanceledFlow(activeOrder)) {
-        return `${cancelOrderDetails} is already canceled (Status: ${activeOrder.status}). ${isPrepaidOrder(activeOrder) ? 'Refund processing is in progress.' : 'COD order - no refund needed.'}`
-      }
-
-      return `${cancelOrderDetails} cannot be canceled - shipment has started. After delivery, you can request a return if still within the return window.`
-    }
-
-    if (intentId === 'refund' && activeOrder) {
-      const refundOrderDetails = `Order ${activeOrder._id.slice(-6)} (${activeOrder.items?.[0]?.product?.name || 'Product'})`
-
-      if (activeOrder.status === ORDER_STATUSES.REFUNDED) {
-        return `${refundOrderDetails} - Refund completed on ${formatStatusDate(activeOrder.refundCompletedAt)}.`
-      }
-
-      if (activeOrder.status === ORDER_STATUSES.REFUND_INITIATED) {
-        return `${refundOrderDetails} - Refund initiated on ${formatStatusDate(activeOrder.refundRequestedAt)}. Usually completes within ${REFUND_DELAY_HOURS} hours.`
-      }
-
-      if (hasCanceledFlow(activeOrder) && !isPrepaidOrder(activeOrder)) {
-        return `${refundOrderDetails} - Canceled COD order, no refund required.`
-      }
-
-      return `${refundOrderDetails} - No active refund. ${hasCanceledFlow(activeOrder) ? 'Check order status for refund progress.' : 'Refunds only apply to canceled prepaid orders or completed returns.'}`
-    }
-
-    if (intentId === 'return' && activeOrder) {
-      const returnOrderDetails = `Order ${activeOrder._id.slice(-6)} (${activeOrder.items?.[0]?.product?.name || 'Product'})`
-
-      if (canRequestReturn(activeOrder)) {
-        return `Yes, ${returnOrderDetails} can be returned. Delivered on ${formatStatusDate(activeOrder.deliveredAt)}, return available until ${formatStatusDate(getOrderMilestones(activeOrder).returnDeadline)}. Use the Request Return button on the order page.`
-      }
-
-      if (hasReturnFlow(activeOrder)) {
-        return `${returnOrderDetails} is already in return process (Status: ${activeOrder.status}). Check the order page for pickup and refund updates.`
-      }
-
-      if (activeOrder.status === ORDER_STATUSES.DELIVERED) {
-        return `${returnOrderDetails} was delivered on ${formatStatusDate(activeOrder.deliveredAt)}, but the 7-day return window has expired.`
-      }
-
-      return `${returnOrderDetails} - Return not available. Order must be delivered first and within the 7-day return window.`
-    }
-
-    if (orderRelatedIntents.includes(intentId) && orderSupportData.orders.length > 1 && !orderSupportData.currentOrder) {
-      let relevantOrders = orderSupportData.orders
-      let actionText = 'help with'
-
-      if (intentId === 'track') {
-        relevantOrders = relevantOrders.filter((order) => [ORDER_STATUSES.SHIPPED, ORDER_STATUSES.OUT_FOR_DELIVERY].includes(order.status))
-        actionText = 'track'
-      } else if (intentId === 'cancel') {
-        relevantOrders = relevantOrders.filter(canCancelOrder)
-        actionText = 'cancel'
-      } else if (intentId === 'return') {
-        relevantOrders = relevantOrders.filter(canRequestReturn)
-        actionText = 'return'
-      } else if (intentId === 'refund') {
-        relevantOrders = relevantOrders.filter((order) => hasCanceledFlow(order) || hasReturnFlow(order))
-        actionText = 'check refund status for'
-      }
-
-      if (relevantOrders.length === 0) {
-        const reasonMap = {
-          track: 'No orders are currently in transit. Orders appear here once they are shipped.',
-          cancel: 'No orders can be canceled at this time. Orders can only be canceled before they ship.',
-          return: 'No orders available for return. Returns are available for 7 days after delivery.',
-          refund: 'No orders with refund status. Refunds only apply to canceled prepaid orders or completed returns.'
-        }
-        return reasonMap[intentId] || 'No eligible orders found for this action.'
-      }
-
-      setAwaitingOrderSelection(true)
-      setPendingOrderAction(intentId)
-      const orderList = relevantOrders.slice(0, 5).map((order, index) => (
-        `${index + 1}. Order ${order._id.slice(-6)} - ${order.items?.[0]?.product?.name || 'Product'} (${order.status}) - ${formatStatusDate(order.date)}`
-      )).join('\n')
-
-      return `You have ${relevantOrders.length} order${relevantOrders.length !== 1 ? 's' : ''} that can be ${actionText}. Which one?\n\n${orderList}\n\nReply with the order number (1-${Math.min(relevantOrders.length, 5)}).`
-    }
-
-    return intentId
-      ? buildBotMessage(INTENTS.find((intent) => intent.id === intentId).reply)
-      : 'I can help with orders, delivery, returns, refunds, payments, coupons, and account support. Try asking in a short sentence like "How do refunds work?" or "Can I cancel before shipping?"'
+    setOrderSupportData({ orders, currentOrder })
+    resolveSupportHistoryFromOrders(orders)
+    return orders
   }
 
   useEffect(() => {
@@ -446,20 +421,13 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
     const loadOrderSupportData = async () => {
       if (!user) {
         setOrderSupportData({ orders: [], currentOrder: null })
+        resolveSupportHistoryFromOrders([])
         return
       }
 
       try {
         const token = await getToken()
-        const { data } = await axios.get('/api/order/list', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-
-        if (!data.success) return
-
-        const orders = (data.orders || []).slice().sort((a, b) => Number(b.date || 0) - Number(a.date || 0))
-        const currentOrder = orderId ? orders.find((order) => order._id === orderId) || null : null
-        setOrderSupportData({ orders, currentOrder })
+        await refreshOrderSupportData(token)
       } catch (error) {
         console.log('Unable to load chatbot order support data', error)
       }
@@ -467,6 +435,19 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
 
     loadOrderSupportData()
   }, [getToken, orderId, user])
+
+  useEffect(() => {
+    const syncSupportHistory = () => resolveSupportHistoryFromOrders(orderSupportData.orders)
+
+    syncSupportHistory()
+    window.addEventListener('storage', syncSupportHistory)
+    window.addEventListener(SUPPORT_HISTORY_EVENT, syncSupportHistory)
+
+    return () => {
+      window.removeEventListener('storage', syncSupportHistory)
+      window.removeEventListener(SUPPORT_HISTORY_EVENT, syncSupportHistory)
+    }
+  }, [orderSupportData.orders])
 
   const pushMessage = (message) => {
     setMessages((prev) => [
@@ -479,90 +460,372 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
     ])
   }
 
-  const getQueryHistory = () => {
-    if (queryHistory.length === 0) return null
+  const getSelectedOrder = () => {
+    if (supportFlow.selectedOrderId) {
+      return orderSupportData.orders.find((order) => order._id === supportFlow.selectedOrderId) || null
+    }
 
-    const recentQueries = queryHistory.slice(-3).map((query, index) => {
-      const order = orderSupportData.orders.find((o) => o._id === query.orderId)
-      const action = query.intent === 'cancel' ? 'Cancel' : 'Return'
-      const status = order?.status || query.status
-      return `${index + 1}. ${action} request for order ${query.orderId.slice(-6)} - Status: ${status} (${formatStatusDate(query.timestamp)})`
-    }).join('\n')
-
-    return `Recent cancel/return queries:\n${recentQueries}`
+    return orderSupportData.currentOrder || orderSupportData.orders[0] || null
   }
 
-  const sendMessage = (text) => {
-    const trimmed = text.trim()
-    if (!trimmed || isTyping) return
+  const buildBotResponse = (text, actions = []) => ({
+    text,
+    actions
+  })
 
-    pushMessage({ sender: 'user', text: trimmed })
+  const buildDefaultResponse = (overrideText = '') => buildBotResponse(
+    overrideText || 'I can help with orders, shipping, refunds, returns, coupons, and account support. Choose one of the buttons below or type a short question.',
+    getDefaultActionButtons()
+  )
+
+  const buildHistoryResponse = () => {
+    const history = resolveSupportHistoryFromOrders(orderSupportData.orders) || loadSupportHistory()
+    const text = history.length
+      ? `Saved support requests:\n${formatQueryHistoryText(history)}`
+      : 'No saved cancel or return requests yet.'
+
+    return buildBotResponse(text, getDefaultActionButtons())
+  }
+
+  const buildOrderButtons = (action, orders) => (
+    orders.slice(0, 5).map((order, index) => ({
+      label: `${index + 1}. ${getOrderSupportTitle(order)}`,
+      command: `select ${action} ${order._id}`,
+      variant: action === SUPPORT_ACTIONS.CANCEL || action === SUPPORT_ACTIONS.RETURN ? 'danger' : 'primary'
+    }))
+  )
+
+  const buildOrderListResponse = (action, orders) => {
+    const actionLabel = SUPPORT_ACTION_LABELS[action] || action
+
+    if (!user) {
+      openSignIn()
+      return buildDefaultResponse('To answer order-specific requests like tracking, cancellation, refund, or return, please sign in first. The login window has been opened for you.')
+    }
+
+    if (!orders.length) {
+      return buildBotResponse(getActionUnavailableReason(action), getDefaultActionButtons())
+    }
+
+    if (orders.length === 1) {
+      const order = orders[0]
+      setOrderSupportData((prev) => ({ ...prev, currentOrder: order }))
+
+      if (action === SUPPORT_ACTIONS.TRACK || action === SUPPORT_ACTIONS.REFUND) {
+        setSupportFlow({
+          stage: 'idle',
+          action,
+          eligibleOrders: orders,
+          selectedOrderId: order._id
+        })
+
+        return buildBotResponse(
+          `${formatOrderLine(order)}\n${formatOrderDetailLine(order, action)}`,
+          [
+            { label: 'Back to menu', command: 'menu', variant: 'neutral' },
+            { label: 'Query history', command: 'query history', variant: 'neutral' }
+          ]
+        )
+      }
+
+      setSupportFlow({
+        stage: 'confirm',
+        action,
+        eligibleOrders: orders,
+        selectedOrderId: order._id
+      })
+
+      return buildBotResponse(
+        `${formatOrderLine(order)}\n${formatOrderDetailLine(order, action)}\n\nType YES in the message box or tap the confirm button below to finish this ${actionLabel.toLowerCase()}.`,
+        getConfirmationButtons(action, order)
+      )
+    }
+
+    setSupportFlow({
+      stage: 'select-order',
+      action,
+      eligibleOrders: orders,
+      selectedOrderId: null
+    })
+
+    return buildBotResponse(
+      `I found ${orders.length} order${orders.length === 1 ? '' : 's'} that can be ${actionLabel.toLowerCase()}.\n\n${orders.slice(0, 5).map((order, index) => `${index + 1}. ${formatOrderLine(order)}`).join('\n')}\n\nTap a button below to continue.`,
+      [
+        ...buildOrderButtons(action, orders),
+        { label: 'Back to menu', command: 'menu', variant: 'neutral' }
+      ]
+    )
+  }
+
+  const buildOrderDetailResponse = (action, order) => {
+    if (!order) {
+      return buildDefaultResponse()
+    }
+
+    setOrderSupportData((prev) => ({ ...prev, currentOrder: order }))
+
+    if (action === SUPPORT_ACTIONS.CANCEL || action === SUPPORT_ACTIONS.RETURN) {
+      setSupportFlow({
+        stage: 'confirm',
+        action,
+        eligibleOrders: supportFlow.eligibleOrders.length ? supportFlow.eligibleOrders : [order],
+        selectedOrderId: order._id
+      })
+
+      return buildBotResponse(
+        `${formatOrderLine(order)}\n${formatOrderDetailLine(order, action)}\n\nType YES in the message box or tap the confirm button below to finish this ${SUPPORT_ACTION_LABELS[action].toLowerCase()}.`,
+        getConfirmationButtons(action, order)
+      )
+    }
+
+    setSupportFlow({
+      stage: 'idle',
+      action,
+      eligibleOrders: [order],
+      selectedOrderId: order._id
+    })
+
+    return buildBotResponse(
+      `${formatOrderLine(order)}\n${formatOrderDetailLine(order, action)}`,
+      [
+        { label: 'Back to menu', command: 'menu', variant: 'neutral' },
+        { label: 'Query history', command: 'query history', variant: 'neutral' }
+      ]
+    )
+  }
+
+  const performOrderAction = async (action, order) => {
+    const token = await getToken()
+    const patchAction = action === SUPPORT_ACTIONS.CANCEL ? 'cancel' : 'request-return'
+
+    const { data } = await axios.patch(
+      `/api/order/${order._id}`,
+      { action: patchAction },
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+
+    if (!data.success) {
+      throw new Error(data.message || `Unable to ${action}`)
+    }
+
+    try {
+      const { data: ordersData } = await axios.get('/api/order/list', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+
+      if (ordersData.success) {
+        const updatedOrders = (ordersData.orders || []).slice().sort((a, b) => Number(b.date || 0) - Number(a.date || 0))
+        const currentOrder = updatedOrders.find((item) => item._id === order._id) || updatedOrders[0] || null
+        setOrderSupportData({
+          orders: updatedOrders,
+          currentOrder
+        })
+        resolveSupportHistoryFromOrders(updatedOrders)
+        return currentOrder || order
+      }
+    } catch (reloadError) {
+      console.log('Could not reload orders after support action', reloadError)
+    }
+
+    return data.order || order
+  }
+
+  const buildActionSuccessResponse = (action, order) => {
+    if (action === SUPPORT_ACTIONS.CANCEL) {
+      const refundText = isPrepaidOrder(order)
+        ? 'Refund processing has started and will complete shortly.'
+        : 'No refund is needed for this COD cancellation.'
+
+      return buildBotResponse(
+        `Done: ${getOrderSupportTitle(order)} was canceled successfully.\n${refundText}`,
+        getDefaultActionButtons()
+      )
+    }
+
+    if (action === SUPPORT_ACTIONS.RETURN) {
+      return buildBotResponse(
+        `Done: Return request completed for ${getOrderSupportTitle(order)}.\nThe return flow and refund updates are now saved in your query history.`,
+        getDefaultActionButtons()
+      )
+    }
+
+    return buildBotResponse(`Done: Updated ${getOrderSupportTitle(order)}.`, getDefaultActionButtons())
+  }
+
+  const buildGeneralIntentResponse = (intentId) => {
+    const intent = INTENTS.find((item) => item.id === intentId)
+    if (!intent) return buildDefaultResponse()
+
+    return buildBotResponse(buildBotMessage(intent.reply), getDefaultActionButtons())
+  }
+
+  const generateReply = async (rawInput) => {
+    const normalized = normalizeCommand(rawInput)
+    if (!normalized) {
+      return buildDefaultResponse()
+    }
+
+    if (normalized === 'menu' || normalized === 'support menu' || normalized === 'main menu') {
+      setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
+      return buildDefaultResponse()
+    }
+
+    if (normalized.includes('query history') || normalized === 'history' || normalized === 'my queries') {
+      return buildHistoryResponse()
+    }
+
+    const confirmMatch = normalized.match(/^confirm\s+(cancel|return)\s+(.+)$/)
+    if (confirmMatch) {
+      const action = confirmMatch[1] === 'cancel' ? SUPPORT_ACTIONS.CANCEL : SUPPORT_ACTIONS.RETURN
+      const token = confirmMatch[2]
+      const order = getOrderFromToken(token, supportFlow.eligibleOrders.length ? supportFlow.eligibleOrders : orderSupportData.orders)
+
+      if (!order) {
+        return buildBotResponse('I could not find that order. Please choose a different one.', getDefaultActionButtons())
+      }
+
+      try {
+        const updatedOrder = await performOrderAction(action, order)
+        const summary = getSupportActionSummary(updatedOrder, action)
+        const status = getSupportActionStatus(updatedOrder, action)
+        upsertSupportHistoryItem(createSupportHistoryItem({
+          action,
+          order: updatedOrder,
+          status,
+          note: summary
+        }))
+        setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
+        return buildActionSuccessResponse(action, updatedOrder)
+      } catch (error) {
+        setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
+        return buildBotResponse(`Unable to complete that action: ${error?.response?.data?.message || error.message}`, getDefaultActionButtons())
+      }
+    }
+
+    const selectMatch = normalized.match(/^select\s+(track|refund|cancel|return)\s+(.+)$/)
+    if (selectMatch) {
+      const action = selectMatch[1] === 'track'
+        ? SUPPORT_ACTIONS.TRACK
+        : selectMatch[1] === 'refund'
+          ? SUPPORT_ACTIONS.REFUND
+          : selectMatch[1] === 'cancel'
+            ? SUPPORT_ACTIONS.CANCEL
+            : SUPPORT_ACTIONS.RETURN
+      const token = selectMatch[2]
+      const eligibleOrders = supportFlow.eligibleOrders.length
+        ? supportFlow.eligibleOrders
+        : getEligibleSupportOrders(orderSupportData.orders, action)
+      const order = getOrderFromToken(token, eligibleOrders)
+
+      if (!order) {
+        return buildBotResponse('Please choose one of the available buttons.', getDefaultActionButtons())
+      }
+
+      return buildOrderDetailResponse(action, order)
+    }
+
+    if (supportFlow.stage === 'select-order') {
+      if (/^\d+$/.test(normalized)) {
+        const index = parseInt(normalized, 10) - 1
+        const order = supportFlow.eligibleOrders[index]
+        if (order) {
+          return buildOrderDetailResponse(supportFlow.action, order)
+        }
+      }
+
+      const order = getOrderFromToken(normalized, supportFlow.eligibleOrders)
+      if (order) {
+        return buildOrderDetailResponse(supportFlow.action, order)
+      }
+
+      setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
+    }
+
+    if (supportFlow.stage === 'confirm') {
+      if (isAffirmative(normalized)) {
+        const order = getOrderFromToken(supportFlow.selectedOrderId, orderSupportData.orders)
+        if (!order) {
+          return buildBotResponse('I could not find the selected order anymore. Please choose a fresh one.', getDefaultActionButtons())
+        }
+
+        try {
+          const updatedOrder = await performOrderAction(supportFlow.action, order)
+          const summary = getSupportActionSummary(updatedOrder, supportFlow.action)
+          const status = getSupportActionStatus(updatedOrder, supportFlow.action)
+          upsertSupportHistoryItem(createSupportHistoryItem({
+            action: supportFlow.action,
+            order: updatedOrder,
+            status,
+            note: summary
+          }))
+          setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
+          return buildActionSuccessResponse(supportFlow.action, updatedOrder)
+        } catch (error) {
+          setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
+          return buildBotResponse(`Unable to complete that action: ${error?.response?.data?.message || error.message}`, getDefaultActionButtons())
+        }
+      }
+
+      if (isNegative(normalized)) {
+        setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
+        return buildDefaultResponse()
+      }
+
+      setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
+    }
+
+    const intentId = getIntentId(normalized)
+    if (['track', 'cancel', 'refund', 'return'].includes(intentId)) {
+      const action = intentId === 'track'
+        ? SUPPORT_ACTIONS.TRACK
+        : intentId === 'refund'
+          ? SUPPORT_ACTIONS.REFUND
+          : intentId === 'cancel'
+            ? SUPPORT_ACTIONS.CANCEL
+            : SUPPORT_ACTIONS.RETURN
+
+      if (isQuestionStyleInput(rawInput)) {
+        return buildGeneralIntentResponse(intentId)
+      }
+
+      return buildOrderListResponse(action, getEligibleSupportOrders(orderSupportData.orders, action))
+    }
+
+    if (intentId) {
+      return buildGeneralIntentResponse(intentId)
+    }
+
+    return buildDefaultResponse()
+  }
+
+  const sendMessage = (text, options = {}) => {
+    const command = normalizeCommand(options.command || text)
+    const displayText = (options.displayText || text || options.command || '').trim()
+    if ((!command && !displayText) || isTyping) return
+
+    pushMessage({ sender: 'user', text: displayText || command })
     setUserInput('')
     setIsTyping(true)
 
     window.setTimeout(async () => {
-      let response = getSupportAwareResponse(trimmed)
-
-      if (awaitingOrderSelection && trimmed.match(/^\d+$/) && pendingOrderAction && orderSupportData.currentOrder) {
-        try {
-          const token = await getToken()
-          const orderId = orderSupportData.currentOrder._id
-          const action = pendingOrderAction === 'cancel' ? 'cancel' : 'request-return'
-
-          const { data } = await axios.patch(
-            `/api/order/${orderId}`,
-            { action },
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
-
-          if (data.success) {
-            const actionDisplay = pendingOrderAction === 'cancel' ? 'Cancelled' : 'Return requested'
-            response = `✓ ${actionDisplay} successfully for order ${orderId.slice(-6)}. ${pendingOrderAction === 'cancel' ? 'Your refund will be processed shortly.' : 'Pickup will be arranged soon.'}`
-
-            try {
-              const { data: ordersData } = await axios.get('/api/order/list', {
-                headers: { Authorization: `Bearer ${token}` }
-              })
-              if (ordersData.success) {
-                const updatedOrders = (ordersData.orders || []).slice().sort((a, b) => Number(b.date || 0) - Number(a.date || 0))
-                setOrderSupportData((prev) => ({
-                  ...prev,
-                  orders: updatedOrders,
-                  currentOrder: updatedOrders.find((o) => o._id === orderId) || null
-                }))
-              }
-            } catch (error) {
-              console.log('Could not reload orders after action', error)
-            }
-          } else {
-            response = `Unable to ${pendingOrderAction}: ${data.message || 'Unknown error'}`
-          }
-        } catch (error) {
-          response = `Unable to ${pendingOrderAction}: ${error.response?.data?.message || error.message}`
-        } finally {
-          setPendingOrderAction(null)
+      try {
+        const response = await generateReply(command || displayText)
+        if (response) {
+          pushMessage({
+            sender: 'bot',
+            text: response.text,
+            actions: response.actions || []
+          })
         }
+      } finally {
+        setIsTyping(false)
       }
+    }, 450)
+  }
 
-      if (['cancel', 'return'].includes(getIntentId(trimmed)) && queryHistory.length > 0) {
-        const history = getQueryHistory()
-        if (history) {
-          response += `\n\n${history}`
-        }
-      }
-
-      if (trimmed.toLowerCase().includes('query history') || trimmed.toLowerCase().includes('cancel history') || trimmed.toLowerCase().includes('return history')) {
-        const history = getQueryHistory()
-        response = history || 'No cancel or return queries found in recent history.'
-      }
-
-      pushMessage({
-        sender: 'bot',
-        text: response
-      })
-      setIsTyping(false)
-      setAwaitingOrderSelection(false)
-    }, 700)
+  const clearChat = () => {
+    setMessages(welcomeMessage)
+    setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
   }
 
   useEffect(() => {
@@ -572,11 +835,10 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
 
     initialQuestionRef.current = initialQuestionKey
     sendMessage(initialQuestion)
-  }, [initialQuestion, initialQuestionKey])
-
-  const clearChat = () => {
-    setMessages(welcomeMessage)
-  }
+    if (typeof onInitialQuestionConsumed === 'function') {
+      onInitialQuestionConsumed()
+    }
+  }, [initialQuestion, initialQuestionKey, onInitialQuestionConsumed])
 
   if (!isOpen && !isHelpPage) {
     return (
@@ -606,10 +868,10 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
       <div className="border-b border-[var(--line-soft)] bg-[linear-gradient(135deg,#f8f4ec_0%,#e7ede2_100%)] px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm">
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm">
               <Image src={assets.logo} alt="SageCart" width={36} height={36} className="h-9 w-9 object-contain" />
-          </div>
-          <div>
+            </div>
+            <div>
               <div className="flex items-center gap-2">
                 <p className="text-sm font-semibold text-[var(--ink-900)]">{BOT_NAME}</p>
                 <span className="rounded-full bg-[rgba(72,98,74,0.12)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--accent-strong)]">
@@ -656,6 +918,21 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
                   <p className={`mt-2 text-[10px] ${message.sender === 'user' ? 'text-white/75' : 'text-[var(--ink-400)]'}`}>
                     {getTimeLabel(message.timestamp)}
                   </p>
+
+                  {message.actions?.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {message.actions.map((action, index) => (
+                        <button
+                          key={`${message.id}-${index}`}
+                          type="button"
+                          onClick={() => sendMessage(action.command, { displayText: action.label })}
+                          className={`rounded-full border px-3 py-2 text-xs font-medium transition ${getActionButtonClass(action.variant)}`}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -685,7 +962,8 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
           {config.quickActions.map((action) => (
             <button
               key={action}
-              onClick={() => sendMessage(action)}
+              type="button"
+              onClick={() => sendMessage(action, { displayText: action })}
               className="rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-xs font-medium text-[var(--ink-700)] transition hover:border-[var(--accent)] hover:bg-[var(--accent-tint)] hover:text-[var(--ink-900)]"
             >
               {action}
@@ -702,7 +980,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
-                  sendMessage(userInput)
+                  sendMessage(userInput, { displayText: userInput })
                 }
               }}
               placeholder="Ask about orders, refunds, shipping, payments, or coupons..."
@@ -711,7 +989,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
           </div>
 
           <button
-            onClick={() => sendMessage(userInput)}
+            onClick={() => sendMessage(userInput, { displayText: userInput })}
             disabled={isTyping || !userInput.trim()}
             className="rounded-[1.2rem] bg-[var(--accent-strong)] px-4 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
           >

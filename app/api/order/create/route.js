@@ -176,9 +176,11 @@ export async function POST(request) {
           .populate('items.product', 'name offerPrice')
           .populate('address', 'fullName area city state phoneNumber')
 
-        void sendOrderPlacedEmailIfNeeded({ order: emailOrder, user }).catch((emailError) => {
+        try {
+            await sendOrderPlacedEmailIfNeeded({ order: emailOrder, user })
+        } catch (emailError) {
             console.error('Failed to send order placed email:', emailError)
-        })
+        }
 
         return NextResponse.json({ success: true, message: 'Order Placed', order })
 

@@ -9,6 +9,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Loading from "@/components/Loading";
 import Chatbot from "@/components/Chatbot";
+import SupportFeedbackBox from "@/components/SupportFeedbackBox";
 import { useAppContext } from "@/context/AppContext";
 import { useRouter } from "next/navigation";
 
@@ -80,6 +81,12 @@ const Home = () => {
         </div>
 
         <NewsLetter />
+        <SupportFeedbackBox
+          pageKey="home"
+          title="What should SageCart improve?"
+          subtitle="Leave one quick note about the home page, products, or checkout."
+          className="mt-16"
+        />
       </div>
       <Chatbot pageContext="general" />
       <Footer />

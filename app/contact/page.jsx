@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Chatbot from "@/components/Chatbot";
+import SupportFeedbackBox from "@/components/SupportFeedbackBox";
 import { toast } from "react-hot-toast";
 import axios from "axios";
 
@@ -42,7 +43,7 @@ const Contact = () => {
         throw new Error(data.message || "Failed to send message.");
       }
 
-      toast.success("Message sent successfully. We’ll get back to you soon.");
+      toast.success("Message sent successfully. We'll get back to you soon.");
       setFormData({
         name: "",
         email: "",
@@ -67,7 +68,7 @@ const Contact = () => {
             Get in Touch
           </h1>
           <p className="text-lg text-[var(--ink-500)] max-w-2xl mx-auto">
-            Have a question, issue, or idea? Send a note and we’ll help you sort it out.
+            Have a question, issue, or idea? Send a note and we&apos;ll help you sort it out.
           </p>
         </div>
 
@@ -182,6 +183,13 @@ const Contact = () => {
             </div>
           </div>
         </div>
+
+        <SupportFeedbackBox
+          pageKey="contact"
+          title="What can we fix?"
+          subtitle="Use this for support ideas, bugs, or small UI notes from the contact page."
+          className="mt-12"
+        />
       </div>
       <Chatbot pageContext="contact" />
       <Footer />
