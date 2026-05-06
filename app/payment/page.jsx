@@ -5,6 +5,7 @@ import axios from 'axios'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { formatPrice } from '@/lib/currencyUtils'
+import { normalizeOrderItems } from '@/lib/orderUtils'
 
 const PaymentPage = () => {
 
@@ -126,9 +127,16 @@ const PaymentPage = () => {
         return
       }
 
+      const normalizedItems = normalizeOrderItems(paymentData.items)
+      if (normalizedItems.length === 0) {
+        toast.error('Your cart items could not be prepared for checkout. Please go back and try again.')
+        setLoading(false)
+        return
+      }
+
       const { data } = await axios.post('/api/order/create', {
         address: addressId,
-        items: paymentData.items,
+        items: normalizedItems,
         promoCode: paymentData.promoCode,
         paymentMethod: paymentData.paymentMethod,
         paymentDiscountInr: paymentData.paymentDiscountInr || 0
@@ -142,7 +150,7 @@ const PaymentPage = () => {
         const payloadForInvoice = {
           order: data.order,
           address: paymentData.address,
-          items: paymentData.invoiceItems || paymentData.items,
+          items: normalizeOrderItems(paymentData.invoiceItems || paymentData.items),
           originalTotalInr: data.order.originalTotalInr,
           subTotalInr: data.order.subTotalInr,
           shippingInr: data.order.shippingInr,

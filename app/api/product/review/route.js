@@ -2,9 +2,11 @@ import connectDB from "@/config/db";
 import Product from "@/models/Product";
 import Order from "@/models/Order";
 import User from "@/models/User";
+import { sendOrderLifecycleEmailsIfNeeded } from "@/lib/emailNotifications";
 import { getAuth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { canLeaveReview, syncOrderWithSystemTime } from "@/lib/orderLifecycle";
+import { resolveOrderProductId } from "@/lib/orderUtils";
 
 export async function POST(request) {
     try {
@@ -14,10 +16,11 @@ export async function POST(request) {
         }
 
         const { productId, rating, comment } = await request.json();
+        const resolvedProductId = resolveOrderProductId(productId);
         const numericRating = Number(rating);
         const trimmedComment = comment?.trim();
 
-        if (!productId || !Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5 || !trimmedComment) {
+        if (!resolvedProductId || !Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5 || !trimmedComment) {
             return NextResponse.json({ success: false, message: 'Missing required fields' }, { status: 400 });
         }
 
@@ -25,7 +28,10 @@ export async function POST(request) {
 
         const purchasedOrders = await Order.find({
             userId: userId,
-            'items.product': productId
+            $or: [
+                { 'items.product': productId },
+                { 'items.productId': productId }
+            ]
         }).sort({ date: -1 });
 
         let eligibleOrder = null;
@@ -33,6 +39,12 @@ export async function POST(request) {
             const { changed } = syncOrderWithSystemTime(purchaseOrder, new Date());
             if (changed) {
                 await purchaseOrder.save();
+            }
+
+            try {
+                await sendOrderLifecycleEmailsIfNeeded(purchaseOrder);
+            } catch (emailError) {
+                console.error('Failed to send order lifecycle email:', emailError);
             }
 
             if (canLeaveReview(purchaseOrder)) {
@@ -50,7 +62,7 @@ export async function POST(request) {
             return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
         }
 
-        const product = await Product.findById(productId);
+        const product = await Product.findById(resolvedProductId);
         if (!product) {
             return NextResponse.json({ success: false, message: 'Product not found' }, { status: 404 });
         }

@@ -1,0 +1,15 @@
+
+> ecommerce-inngest@0.1.0 dev
+> node scripts/dev-server.js --port 3000
+
+   ▲ Next.js 15.3.8
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.8:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 1236ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 3.3s (1548 modules)
+ GET /_next/static/media/header_macbook_image.2135a26c.png 404 in 3880ms
+ ✓ Compiled in 360ms (578 modules)

@@ -73,7 +73,7 @@ const OrderPlaced = () => {
         <div className='mb-4 border-t pt-4'>
           <p className='font-semibold mb-2'>Order Items</p>
           {invoice.items.map((item, idx) => (
-            <p key={idx}>{item.productName || item.name || item.product} × {item.quantity}</p>
+            <p key={idx}>{item.productName || item.name || item.product}{item.variantLabel || item.color ? ` (${item.variantLabel || item.color})` : ''} × {item.quantity}</p>
           ))}
         </div>
 

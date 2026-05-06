@@ -6,7 +6,13 @@
     "dev": "node scripts/dev-server.js",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "convert:dataset": "node scripts/convert-combined-dataset.mjs",
+    "seed:dataset": "node scripts/seed-combined-dataset.mjs",
+    "convert:marketplace": "node scripts/convert-products-dataset.mjs",
+    "seed:marketplace": "node scripts/seed-dataset-products.mjs",
+    "convert:flipkart": "node scripts/convert-flipkart-dataset.mjs",
+    "seed:flipkart": "node scripts/seed-flipkart-dataset.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.23.2",

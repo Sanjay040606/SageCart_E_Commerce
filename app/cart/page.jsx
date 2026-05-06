@@ -8,7 +8,14 @@ import Navbar from "@/components/Navbar";
 import Loading from "@/components/Loading";
 import Footer from "@/components/Footer";
 import { useAppContext } from "@/context/AppContext";
-import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
+import { formatPrice } from "@/lib/currencyUtils";
+import {
+  getCartItemOriginalUnitPriceInr,
+  getCartItemUnitPriceInr,
+  getCartProductQuantity,
+  parseCartKey
+} from "@/lib/cartUtils";
+import { getProductPrimaryImage, getProductVariantImage, normalizeProductImageUrl } from "@/lib/productDisplay";
 
 const Cart = () => {
   const { products, productsLoading, router, cartItems, updateCartQuantity, getCartCount, currency } = useAppContext();
@@ -19,17 +26,30 @@ const Cart = () => {
 
   const cartEntries = Object.entries(cartItems)
     .map(([cartKey, quantity]) => {
-      const productId = cartKey.split('_')[0];
-      const color = cartKey.split('_')[1];
-      const product = products.find((item) => item._id === productId);
+      const parsedKey = parseCartKey(cartKey);
+      const product = products.find((item) => item._id === parsedKey.productId);
+      const qty = Number(quantity) || 0;
 
-      if (!product || quantity <= 0) return null;
+      if (!product || qty <= 0) return null;
+
+      const otherQuantity = getCartProductQuantity(cartItems, parsedKey.productId, cartKey);
+      const remainingStock = Math.max(0, product.stock - otherQuantity);
+      const unitPriceInr = getCartItemUnitPriceInr(product, parsedKey);
+      const originalUnitPriceInr = getCartItemOriginalUnitPriceInr(product, parsedKey);
+      const variantImage = getProductVariantImage(product, parsedKey);
 
       return {
         cartKey,
-        color,
-        quantity,
-        product
+        product,
+        quantity: qty,
+        variantLabel: parsedKey.variantLabel,
+        variantType: parsedKey.variantType,
+        variantId: parsedKey.variantId,
+        productImage: normalizeProductImageUrl(variantImage || getProductPrimaryImage(product)),
+        unitPriceInr,
+        originalUnitPriceInr,
+        remainingStock,
+        lineTotalInr: unitPriceInr * qty
       };
     })
     .filter(Boolean);
@@ -54,13 +74,13 @@ const Cart = () => {
           <div className="flex flex-col gap-8 lg:flex-row">
             <div className="min-w-0 flex-1">
               <div className="md:hidden space-y-4">
-                {cartEntries.map(({ cartKey, color, quantity, product }) => (
+                {cartEntries.map(({ cartKey, variantLabel, quantity, product, productImage, unitPriceInr, originalUnitPriceInr, remainingStock, lineTotalInr }) => (
                   <div key={cartKey} className="rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-4 shadow-sm">
                     <div className="flex items-start gap-3">
                       <button className="shrink-0" onClick={() => router.push(`/product/${product._id}`)}>
                         <div className="rounded-[1.25rem] bg-[var(--bg-soft)] p-3">
                           <Image
-                            src={product.image[0]}
+                            src={productImage || assets.box_icon}
                             alt={product.name}
                             className="h-20 w-20 object-cover mix-blend-multiply"
                             width={1280}
@@ -74,10 +94,10 @@ const Cart = () => {
                           className="cursor-pointer text-sm font-semibold text-[var(--ink-900)]"
                           onClick={() => router.push(`/product/${product._id}`)}
                         >
-                          {product.name} {color ? `(${color})` : ''}
+                          {product.name} {variantLabel ? `(${variantLabel})` : ""}
                         </p>
                         <p className="mt-1 text-xs text-[var(--ink-500)]">
-                          Offer: {formatPrice(convertUSDToINR(product.offerPrice), currency)}
+                          Offer: {formatPrice(unitPriceInr, currency)}
                         </p>
                         <button
                           className="mt-2 text-xs text-[var(--accent-strong)]"
@@ -91,11 +111,11 @@ const Cart = () => {
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                       <div className="rounded-xl bg-white/70 p-3">
                         <p className="text-[11px] uppercase tracking-wide text-gray-400">Price</p>
-                        <p className="mt-1 text-[var(--ink-700)]">{formatPrice(convertUSDToINR(product.offerPrice), currency)}</p>
+                        <p className="mt-1 text-[var(--ink-700)]">{formatPrice(unitPriceInr, currency)}</p>
                       </div>
                       <div className="rounded-xl bg-white/70 p-3">
                         <p className="text-[11px] uppercase tracking-wide text-gray-400">Subtotal</p>
-                        <p className="mt-1 text-[var(--ink-700)]">{formatPrice(convertUSDToINR(product.offerPrice * quantity), currency)}</p>
+                        <p className="mt-1 text-[var(--ink-700)]">{formatPrice(lineTotalInr, currency)}</p>
                       </div>
                     </div>
 
@@ -110,11 +130,12 @@ const Cart = () => {
                         </button>
                         <input
                           onChange={(event) => {
-                            const value = Number(event.target.value)
+                            const value = Number(event.target.value);
+                            const maxQuantity = Math.max(0, remainingStock);
                             updateCartQuantity(
                               cartKey,
-                              Number.isNaN(value) ? 0 : Math.min(Math.max(value, 0), product.stock)
-                            )
+                              Number.isNaN(value) ? 0 : Math.min(Math.max(value, 0), maxQuantity)
+                            );
                           }}
                           type="number"
                           value={quantity}
@@ -122,11 +143,11 @@ const Cart = () => {
                         />
                         <button
                           onClick={() => {
-                            const currentQty = quantity || 0
-                            if (currentQty < product.stock) {
-                              updateCartQuantity(cartKey, currentQty + 1)
+                            const currentQty = quantity || 0;
+                            if (currentQty < remainingStock) {
+                              updateCartQuantity(cartKey, currentQty + 1);
                             } else {
-                              toast.error(`Only ${product.stock} items available in stock.`)
+                              toast.error(`Only ${remainingStock} items available in stock.`);
                             }
                           }}
                           className="rounded-full border border-[var(--line-soft)] bg-white p-2"
@@ -134,7 +155,12 @@ const Cart = () => {
                           <Image src={assets.increase_arrow} alt="increase_arrow" className="h-4 w-4" />
                         </button>
                       </div>
-                      <p className="mt-1 text-xs text-gray-500">Available: {product.stock}</p>
+                      <p className="mt-1 text-xs text-gray-500">Available: {remainingStock}</p>
+                      {originalUnitPriceInr > unitPriceInr && (
+                        <p className="mt-1 text-xs text-gray-400 line-through">
+                          Original: {formatPrice(originalUnitPriceInr, currency)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -151,13 +177,13 @@ const Cart = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {cartEntries.map(({ cartKey, color, quantity, product }) => (
+                    {cartEntries.map(({ cartKey, variantLabel, quantity, product, productImage, unitPriceInr, originalUnitPriceInr, remainingStock, lineTotalInr }) => (
                       <tr key={cartKey} className="border-t border-[var(--line-soft)]/70">
                         <td className="flex items-center gap-4 py-5 px-4">
                           <div className="cursor-pointer" onClick={() => router.push(`/product/${product._id}`)}>
                             <div className="rounded-[1.25rem] overflow-hidden bg-[var(--bg-soft)] p-3">
                               <Image
-                                src={product.image[0]}
+                                src={productImage || assets.box_icon}
                                 alt={product.name}
                                 className="w-16 h-auto object-cover mix-blend-multiply"
                                 width={1280}
@@ -167,9 +193,14 @@ const Cart = () => {
                           </div>
                           <div className="text-sm">
                             <p className="text-[var(--ink-900)] font-semibold cursor-pointer" onClick={() => router.push(`/product/${product._id}`)}>
-                              {product.name} {color ? `(${color})` : ''}
+                              {product.name} {variantLabel ? `(${variantLabel})` : ""}
                             </p>
-                            <p className="text-xs text-[var(--ink-500)] mt-1">Offer: {formatPrice(convertUSDToINR(product.offerPrice), currency)}</p>
+                            <p className="text-xs text-[var(--ink-500)] mt-1">Offer: {formatPrice(unitPriceInr, currency)}</p>
+                            {originalUnitPriceInr > unitPriceInr && (
+                              <p className="text-xs text-gray-400 line-through mt-1">
+                                Original: {formatPrice(originalUnitPriceInr, currency)}
+                              </p>
+                            )}
                             <button
                               className="text-xs text-[var(--accent-strong)] mt-2"
                               onClick={() => updateCartQuantity(cartKey, 0)}
@@ -178,7 +209,7 @@ const Cart = () => {
                             </button>
                           </div>
                         </td>
-                        <td className="py-4 px-4 text-[var(--ink-700)]">{formatPrice(convertUSDToINR(product.offerPrice), currency)}</td>
+                        <td className="py-4 px-4 text-[var(--ink-700)]">{formatPrice(unitPriceInr, currency)}</td>
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-2">
                             <button onClick={() => updateCartQuantity(cartKey, quantity - 1)}>
@@ -186,11 +217,12 @@ const Cart = () => {
                             </button>
                             <input
                               onChange={(event) => {
-                                const value = Number(event.target.value)
+                                const value = Number(event.target.value);
+                                const maxQuantity = Math.max(0, remainingStock);
                                 updateCartQuantity(
                                   cartKey,
-                                  Number.isNaN(value) ? 0 : Math.min(Math.max(value, 0), product.stock)
-                                )
+                                  Number.isNaN(value) ? 0 : Math.min(Math.max(value, 0), maxQuantity)
+                                );
                               }}
                               type="number"
                               value={quantity}
@@ -198,20 +230,20 @@ const Cart = () => {
                             />
                             <button
                               onClick={() => {
-                                const currentQty = quantity || 0
-                                if (currentQty < product.stock) {
-                                  updateCartQuantity(cartKey, currentQty + 1)
+                                const currentQty = quantity || 0;
+                                if (currentQty < remainingStock) {
+                                  updateCartQuantity(cartKey, currentQty + 1);
                                 } else {
-                                  toast.error(`Only ${product.stock} items available in stock.`)
+                                  toast.error(`Only ${remainingStock} items available in stock.`);
                                 }
                               }}
                             >
                               <Image src={assets.increase_arrow} alt="increase_arrow" className="w-4 h-4" />
                             </button>
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">Available: {product.stock}</p>
+                          <p className="text-xs text-gray-500 mt-1">Available: {remainingStock}</p>
                         </td>
-                        <td className="py-4 px-4 text-[var(--ink-700)]">{formatPrice(convertUSDToINR(product.offerPrice * quantity), currency)}</td>
+                        <td className="py-4 px-4 text-[var(--ink-700)]">{formatPrice(lineTotalInr, currency)}</td>
                       </tr>
                     ))}
                   </tbody>

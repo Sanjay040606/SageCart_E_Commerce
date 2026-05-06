@@ -9,6 +9,8 @@ const reviewSchema = new mongoose.Schema({
 });
 
 const productSchema = new mongoose.Schema({
+    source: { type: String, default: "manual" },
+    sourceId: { type: String, sparse: true, unique: true, trim: true },
     userId: { type: String, required: true, ref: "user" },
     name: { type: String, required: true},
     description: { type: String, required: true},
@@ -24,8 +26,12 @@ const productSchema = new mongoose.Schema({
         default: 'active'
     },
     colors: { type: [String], default: [] },
+    sizes: { type: [String], default: [] },
+    variantMode: { type: String, default: 'variant' },
+    variantOptions: { type: [mongoose.Schema.Types.Mixed], default: [] },
     reviews: [reviewSchema],
-    date: {type: Number , required: true}
+    date: {type: Number , required: true},
+    datasetMeta: { type: mongoose.Schema.Types.Mixed, default: {} }
 })
 
 const Product = mongoose.models.product || mongoose.model('product' , productSchema)

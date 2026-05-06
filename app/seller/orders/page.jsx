@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { assets } from "@/assets/assets";
 import Image from "next/image";
 import { useAppContext } from "@/context/AppContext";
@@ -8,6 +8,7 @@ import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
 import {
     ORDER_STATUSES,
     getOrderMilestones,
+    getReturnMilestones,
     getStatusTimestamp,
     hasCanceledFlow,
     hasReturnFlow,
@@ -20,9 +21,12 @@ import {
     getOrderSummaryStatusClass,
     getOrderSummaryStatusLabel
 } from "@/lib/orderDisplay";
+import { getProductPrimaryImage, normalizeProductImageUrl } from "@/lib/productDisplay";
 import Footer from "@/components/seller/Footer";
 import axios from "axios";
 import toast from "react-hot-toast";
+
+const ORDERS_PAGE_SIZE = 20;
 
 const formatStatusDate = (value) => {
     if (!value) return 'Not yet';
@@ -42,6 +46,12 @@ const Orders = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [animationReady, setAnimationReady] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pagination, setPagination] = useState({
+        totalOrders: 0,
+        totalPages: 1
+    });
+    const hasFetchedOnceRef = useRef(false);
 
     const getOrderProgressPercent = (status) => {
         const steps = [ORDER_STATUSES.CONFIRMED, ORDER_STATUSES.SHIPPED, ORDER_STATUSES.OUT_FOR_DELIVERY, ORDER_STATUSES.DELIVERED];
@@ -52,6 +62,7 @@ const Orders = () => {
 
     const getSellerOrderDetails = (order) => {
         const { shippedEta, deliveryEta } = getOrderMilestones(order || {});
+        const returnMilestones = getReturnMilestones(order || {});
         const canceledAt = getStatusTimestamp(order, ORDER_STATUSES.CANCELED, order?.canceledAt);
         const refundInitiatedAt = getStatusTimestamp(order, ORDER_STATUSES.REFUND_INITIATED, order?.refundRequestedAt);
         const refundedAt = getStatusTimestamp(order, ORDER_STATUSES.REFUNDED, order?.refundCompletedAt);
@@ -71,6 +82,20 @@ const Orders = () => {
         if (hasReturnFlow(order)) {
             if (order.status === ORDER_STATUSES.REFUNDED) {
                 return `Return refunded on ${formatStatusDate(order.refundCompletedAt || refundedAt)}.`;
+            }
+
+            if (order.status === ORDER_STATUSES.RETURNED) {
+                return isPrepaidOrder(order)
+                    ? `Returned on ${formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.RETURNED, order?.returnRequestedAt))}. Refund completes on ${formatStatusDate(returnMilestones?.refundCompletedEta)}.`
+                    : `Returned on ${formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.RETURNED, order?.returnRequestedAt))}.`;
+            }
+
+            if (order.status === ORDER_STATUSES.OUT_FOR_PICKUP) {
+                return `Pickup scheduled for ${formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.OUT_FOR_PICKUP, returnMilestones?.outForPickupEta))}.`;
+            }
+
+            if (order.status === ORDER_STATUSES.RETURN_CONFIRMED) {
+                return `Return confirmed on ${formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.RETURN_CONFIRMED, order?.returnRequestedAt))}. Pickup on ${formatStatusDate(returnMilestones?.outForPickupEta)}.`;
             }
 
             return `Return in progress.`;
@@ -112,7 +137,7 @@ const Orders = () => {
         }
         setAnimationReady(false);
     }, [loading, orders.length]);
-    const fetchSellerOrders = useCallback(async ({ initial = false, silent = false } = {}) => {
+    const fetchSellerOrders = useCallback(async ({ initial = false, silent = false, page = 1 } = {}) => {
         try {
             if (initial) {
                 setLoading(true);
@@ -122,10 +147,17 @@ const Orders = () => {
 
             const token = await getToken()
 
-            const {data} = await axios.get('/api/order/seller-orders',{headers: {Authorization: `Bearer ${token}`}})
+            const {data} = await axios.get(`/api/order/seller-orders?page=${page}&limit=${ORDERS_PAGE_SIZE}`, {headers: {Authorization: `Bearer ${token}`}})
 
             if (data.success) {
                 setOrders(Array.isArray(data.orders) ? data.orders : [])
+                setPagination({
+                    totalOrders: data.pagination?.totalOrders || 0,
+                    totalPages: data.pagination?.totalPages || 1
+                })
+                if (typeof data.pagination?.page === 'number' && data.pagination.page !== page) {
+                    setCurrentPage(data.pagination.page)
+                }
             } else if (!silent) {
                 toast.error(data.message)
             }
@@ -135,6 +167,7 @@ const Orders = () => {
                 toast.error(error?.response?.data?.message || error.message)
             }
         } finally {
+            hasFetchedOnceRef.current = true
             if (initial) {
                 setLoading(false)
             } else {
@@ -145,18 +178,21 @@ const Orders = () => {
 
     useEffect(() => {
         if (user) {
-            fetchSellerOrders({ initial: true });
+            fetchSellerOrders({
+                initial: !hasFetchedOnceRef.current && currentPage === 1,
+                page: currentPage
+            });
         } else {
             setLoading(false);
         }
-    }, [fetchSellerOrders, user]);
+    }, [currentPage, fetchSellerOrders, user]);
 
     useEffect(() => {
         if (!user) return;
 
         const refreshVisibleOrders = () => {
             if (document.visibilityState === 'visible') {
-                fetchSellerOrders({ silent: true });
+                fetchSellerOrders({ silent: true, page: currentPage });
             }
         };
 
@@ -170,7 +206,12 @@ const Orders = () => {
             window.removeEventListener('focus', refreshVisibleOrders);
             document.removeEventListener('visibilitychange', refreshVisibleOrders);
         };
-    }, [fetchSellerOrders, user]);
+    }, [currentPage, fetchSellerOrders, user]);
+
+    const visibleStart = pagination.totalOrders > 0 ? ((currentPage - 1) * ORDERS_PAGE_SIZE) + 1 : 0;
+    const visibleEnd = pagination.totalOrders > 0
+        ? Math.min(currentPage * ORDERS_PAGE_SIZE, pagination.totalOrders)
+        : 0;
 
     return (
         <div className="flex-1 h-screen overflow-scroll flex flex-col justify-between text-sm">
@@ -201,6 +242,10 @@ const Orders = () => {
                                 const productLabel = getPrimaryOrderProductLabel(order);
                                 const statusLabel = getOrderSummaryStatusLabel(order);
                                 const paymentState = getOrderPaymentStateLabel(order);
+                                const firstItem = order.items?.[0] || {};
+                                const productSource = firstItem.product && typeof firstItem.product === 'object' ? firstItem.product : firstItem;
+                                const productImage = normalizeProductImageUrl(firstItem.productImage || getProductPrimaryImage(productSource));
+                                const productAlt = productSource?.name || firstItem.productName || 'Product';
 
                                 return (
                                     <div
@@ -212,8 +257,8 @@ const Orders = () => {
                                             <div className='w-16 h-16 rounded-lg overflow-hidden border border-gray-200'>
                                                 <Image
                                                     className='w-full h-full object-cover'
-                                                    src={order.items?.[0]?.product?.image?.[0] || assets.box_icon}
-                                                    alt={order.items?.[0]?.product?.name || 'Product'}
+                                                    src={productImage || assets.box_icon}
+                                                    alt={productAlt}
                                                     width={64}
                                                     height={64}
                                                 />
@@ -247,6 +292,33 @@ const Orders = () => {
                             })}
                         </div>
                     )}
+
+                    <div className="flex flex-col gap-3 rounded-md border border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs text-gray-500">
+                            Showing {visibleStart}-{visibleEnd} of {pagination.totalOrders} orders
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                                disabled={loading || refreshing || currentPage <= 1}
+                                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Previous
+                            </button>
+                            <span className="min-w-24 text-center text-xs text-gray-500">
+                                Page {currentPage} of {pagination.totalPages}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((page) => Math.min(pagination.totalPages, page + 1))}
+                                disabled={loading || refreshing || currentPage >= pagination.totalPages}
+                                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
             <Footer />

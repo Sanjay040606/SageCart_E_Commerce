@@ -1,7 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import connectDB from "@/config/db";
 import Order from "@/models/Order";
+import User from "@/models/User";
 import { sendOrderLifecycleEmailsIfNeeded } from "@/lib/emailNotifications";
+import { hydrateOrderDocument } from "@/lib/orderHydration";
 import {
   ORDER_STATUSES,
   addTimelineEntry,
@@ -25,10 +27,7 @@ export const GET = async (req, { params }) => {
       );
     }
 
-    const order = await Order.findById(params.id)
-      .populate("userId", "name email")
-      .populate("items.product", "name image price offerPrice reviews")
-      .populate("address", "fullName area city state phoneNumber");
+    const order = await Order.findById(params.id);
 
     if (!order) {
       return Response.json(
@@ -38,7 +37,7 @@ export const GET = async (req, { params }) => {
     }
 
     // Check if order belongs to the authenticated user
-    if (order.userId._id.toString() !== userId) {
+    if (String(order.userId) !== userId) {
       return Response.json(
         { success: false, message: "Unauthorized" },
         { status: 403 }
@@ -50,7 +49,18 @@ export const GET = async (req, { params }) => {
       await order.save();
     }
 
-    return Response.json({ success: true, order }, { status: 200 });
+    try {
+      const user = await User.findById(order.userId).select("name email").lean();
+      await sendOrderLifecycleEmailsIfNeeded(order, { user });
+    } catch (emailError) {
+      console.error("Failed to send order lifecycle email:", emailError);
+    }
+
+    const hydratedOrder = await hydrateOrderDocument(order, {
+      productSelect: "name image price offerPrice reviews"
+    });
+
+    return Response.json({ success: true, order: hydratedOrder }, { status: 200 });
   } catch (error) {
     console.log(error);
     return Response.json(
@@ -140,14 +150,12 @@ export const PATCH = async (req, { params }) => {
         break;
       case 'request-return':
         if (canRequestReturn(order, now)) {
-          const baseTime = now.getTime();
-          order.refundRequestedAt = new Date(baseTime);
-          order.refundCompletedAt = new Date(baseTime + (3 * 60 * 60 * 1000));
-          addTimelineEntry(order, ORDER_STATUSES.RETURN_CONFIRMED, new Date(baseTime), 'Return confirmed. Pickup has been scheduled.');
-          addTimelineEntry(order, ORDER_STATUSES.OUT_FOR_PICKUP, new Date(baseTime + (60 * 60 * 1000)), 'Pickup agent is out for pickup today.');
-          addTimelineEntry(order, ORDER_STATUSES.RETURNED, new Date(baseTime + (2 * 60 * 60 * 1000)), 'Returned item has been received successfully.');
-          addTimelineEntry(order, ORDER_STATUSES.REFUNDED, new Date(baseTime + (3 * 60 * 60 * 1000)), 'Refund completed successfully after return.');
-          order.status = ORDER_STATUSES.REFUNDED;
+          order.returnRequestedAt = now;
+          order.refundRequestedAt = null;
+          order.refundCompletedAt = null;
+          order.needsStockRestoration = false;
+          addTimelineEntry(order, ORDER_STATUSES.RETURN_CONFIRMED, now, 'Return confirmed. Pickup has been scheduled for tomorrow and the return will complete the same day.');
+          order.status = ORDER_STATUSES.RETURN_CONFIRMED;
 
           // Note: Stock will be restored when the return is actually completed (RETURNED status)
           // This happens automatically in the syncOrderWithSystemTime function
@@ -156,8 +164,22 @@ export const PATCH = async (req, { params }) => {
         }
         break;
       case 'complete-return':
-        if (getTimelineEntry(order, ORDER_STATUSES.RETURN_CONFIRMED)) {
-          order.status = ORDER_STATUSES.REFUNDED;
+        if (getTimelineEntry(order, ORDER_STATUSES.RETURN_CONFIRMED) || getTimelineEntry(order, ORDER_STATUSES.OUT_FOR_PICKUP)) {
+          addTimelineEntry(order, ORDER_STATUSES.RETURNED, now, 'Item picked up and returned successfully.');
+          order.status = ORDER_STATUSES.RETURNED;
+
+          if (isPrepaidOrder(order) && !order.refundRequestedAt) {
+            order.refundRequestedAt = now;
+            addTimelineEntry(order, ORDER_STATUSES.REFUND_INITIATED, now, 'Refund initiated for your return.');
+          }
+
+          try {
+            await restoreProductStock(order.items);
+            order.stockRestored = true;
+            order.needsStockRestoration = false;
+          } catch (stockError) {
+            console.error('Failed to restore product stock on manual return completion:', stockError);
+          }
         } else {
           return Response.json({ success: false, message: 'Order is not in return request stage.' }, { status: 400 });
         }
@@ -168,13 +190,8 @@ export const PATCH = async (req, { params }) => {
 
     await order.save();
 
-    const emailReadyOrder = await Order.findById(order._id)
-      .populate("userId", "name email")
-      .populate("items.product", "name image price offerPrice")
-      .populate("address", "fullName area city state phoneNumber");
-
     try {
-      await sendOrderLifecycleEmailsIfNeeded(emailReadyOrder || order);
+      await sendOrderLifecycleEmailsIfNeeded(order);
     } catch (emailError) {
       console.error("Failed to send order lifecycle email:", emailError);
     }

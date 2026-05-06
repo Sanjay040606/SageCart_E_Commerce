@@ -1,13 +1,33 @@
 import mongoose from "mongoose";
-import Address from './Address.js';
+import { resolveOrderProductId } from "@/lib/orderUtils";
+
+const orderItemSchema = new mongoose.Schema({
+    product: {
+        type: String,
+        ref: 'product',
+        validate: {
+            validator(value) {
+                return Boolean(resolveOrderProductId({ product: value, productId: this.productId }));
+            },
+            message: 'Path `product` is required.'
+        }
+    },
+    productId: { type: String, default: '' },
+    productName: { type: String, default: '' },
+    productImage: { type: String, default: '' },
+    quantity : { type: Number, required: true },
+    color: { type: String, default: '' },
+    variantLabel: { type: String, default: '' },
+    variantType: { type: String, default: '' },
+    variantPriceInr: { type: Number, default: null },
+    variantOriginalPriceInr: { type: Number, default: null },
+    offerPriceInr: { type: Number, default: null },
+    originalPriceInr: { type: Number, default: null }
+}, { _id: false });
 
 const orderSchema = new mongoose.Schema({
     userId : { type: String, required: true, ref: 'user'} ,
-    items: [{
-        product: { type: String, required: true, ref: 'product' },
-        quantity : { type: Number, required: true },
-        color: { type: String, default: '' }
-    }],
+    items: [orderItemSchema],
     amount : { type: Number, required: true, default: 0 },
     amountInr: { type: Number, required: true, default: 0 },
     originalTotalInr: { type: Number, required: true, default: 0 },
@@ -35,9 +55,27 @@ const orderSchema = new mongoose.Schema({
     orderEmailSentAt: { type: Date },
     cancelEmailSentAt: { type: Date },
     deliveryEmailSentAt: { type: Date },
+    returnConfirmedEmailSentAt: { type: Date },
+    returnEmailSentAt: { type: Date },
     refundEmailSentAt: { type: Date },
     stockRestored: { type: Boolean, default: false }
 })
+
+orderSchema.pre('validate', function(next) {
+    if (Array.isArray(this.items)) {
+        this.items.forEach((item) => {
+            if (!item) return;
+
+            const resolvedProductId = resolveOrderProductId(item);
+            if (!resolvedProductId) return;
+
+            item.product = resolvedProductId;
+            item.productId = resolvedProductId;
+        });
+    }
+
+    next();
+});
 
 const Order = mongoose.models.order || mongoose.model('order' , orderSchema)
 

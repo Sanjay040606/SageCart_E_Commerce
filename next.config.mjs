@@ -11,12 +11,42 @@ const nextConfig = {
             {
                 protocol: 'https',
                 hostname: 'res.cloudinary.com',
-                pathname: '**',
+                pathname: '/**',
             },
             {
                 protocol: 'https',
                 hostname: 'raw.githubusercontent.com',
-                pathname: '**',
+                pathname: '/**',
+            },
+            {
+                protocol: 'https',
+                hostname: 'assets.myntassets.com',
+                pathname: '/**',
+            },
+            {
+                protocol: 'https',
+                hostname: 'rukminim1.flixcart.com',
+                pathname: '/**',
+            },
+            {
+                protocol: 'https',
+                hostname: 'm.media-amazon.com',
+                pathname: '/**',
+            },
+            {
+                protocol: 'https',
+                hostname: 'images-na.ssl-images-amazon.com',
+                pathname: '/**',
+            },
+            {
+                protocol: 'https',
+                hostname: 'img.lazcdn.com',
+                pathname: '/**',
+            },
+            {
+                protocol: 'http',
+                hostname: 'assets.myntassets.com',
+                pathname: '/**',
             },
         ],
     },

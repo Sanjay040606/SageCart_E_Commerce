@@ -1,9 +1,9 @@
 import connectDB from "@/config/db";
 import authSeller from "@/lib/authSeller";
 import Product from "@/models/Product";
-import { syncProductStatus } from "@/lib/productStock";
 import { getAuth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { buildCatalogSummaryPipeline } from "@/lib/productApi";
 
 export async function GET(request) {
     try {
@@ -18,13 +18,15 @@ export async function GET(request) {
 
         await connectDB()
 
-        const products = await Product.find({})
-        await Promise.all(products.map(async (product) => {
-            if (syncProductStatus(product)) {
-                await product.save()
+        const products = await Product.aggregate(buildCatalogSummaryPipeline())
+        return NextResponse.json(
+            { success: true, products },
+            {
+                headers: {
+                    "Cache-Control": "public, max-age=30, stale-while-revalidate=300"
+                }
             }
-        }))
-        return NextResponse.json({ success: true , products })
+        )
 
     } catch (error) {
         return NextResponse.json({ success: false, message: error.message})

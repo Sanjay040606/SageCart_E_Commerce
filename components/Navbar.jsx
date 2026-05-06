@@ -6,6 +6,8 @@ import { useAppContext } from "@/context/AppContext";
 import Image from "next/image";
 import { useClerk, UserButton } from "@clerk/nextjs";
 import axios from "axios";
+import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
+import { getProductPrimaryImage, normalizeProductImageUrl } from "@/lib/productDisplay";
 
 const userButtonAppearance = {
   elements: {
@@ -162,28 +164,31 @@ const Navbar = () => {
 
                 {showSuggestions && suggestions.length > 0 && (
                   <div className="mt-3 max-h-64 overflow-y-auto rounded-2xl border border-[var(--line-soft)] bg-white">
-                    {suggestions.map((product) => (
-                      <div
-                        key={product._id}
-                        onClick={() => handleSuggestionClick(product._id)}
-                        className="flex cursor-pointer items-center gap-3 border-b border-[var(--line-soft)]/70 px-4 py-3 transition hover:bg-[var(--accent-tint)]/50 last:border-b-0"
-                      >
-                        {product.image && product.image[0] && (
+                    {suggestions.map((product) => {
+                      const productImage = normalizeProductImageUrl(getProductPrimaryImage(product));
+                      return (
+                        <div
+                          key={product._id}
+                          onClick={() => handleSuggestionClick(product._id)}
+                          className="flex cursor-pointer items-center gap-3 border-b border-[var(--line-soft)]/70 px-4 py-3 transition hover:bg-[var(--accent-tint)]/50 last:border-b-0"
+                        >
                           <Image
-                            src={product.image[0]}
+                            src={productImage || assets.box_icon}
                             alt={product.name}
                             width={40}
                             height={40}
                             className="rounded-xl object-cover"
                           />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-[var(--ink-900)]">{product.name}</p>
-                          <p className="text-xs text-[var(--ink-500)]">{product.category}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-[var(--ink-900)]">{product.name}</p>
+                            <p className="text-xs text-[var(--ink-500)]">{product.category}</p>
+                          </div>
+                          <p className="text-sm font-semibold text-[var(--accent-strong)]">
+                            {formatPrice(convertUSDToINR(product.offerPrice), currency)}
+                          </p>
                         </div>
-                        <p className="text-sm font-semibold text-[var(--accent-strong)]">{currency}{product.offerPrice}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -266,27 +271,28 @@ const Navbar = () => {
             </div>
             {showSuggestions && suggestions.length > 0 && (
               <div className="mt-3 max-h-[calc(100dvh-15rem)] overflow-y-auto rounded-[1.25rem] border border-[var(--line-soft)] bg-white">
-                {suggestions.map((product) => (
-                  <div
-                    key={product._id}
-                    onClick={() => handleSuggestionClick(product._id)}
-                    className="flex items-center gap-3 border-b border-[var(--line-soft)]/70 px-4 py-3 last:border-b-0"
-                  >
-                    {product.image && product.image[0] && (
+                {suggestions.map((product) => {
+                  const productImage = normalizeProductImageUrl(getProductPrimaryImage(product));
+                  return (
+                    <div
+                      key={product._id}
+                      onClick={() => handleSuggestionClick(product._id)}
+                      className="flex items-center gap-3 border-b border-[var(--line-soft)]/70 px-4 py-3 last:border-b-0"
+                    >
                       <Image
-                        src={product.image[0]}
+                        src={productImage || assets.box_icon}
                         alt={product.name}
                         width={36}
                         height={36}
                         className="rounded-lg object-cover"
                       />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-[var(--ink-900)]">{product.name}</p>
-                      <p className="text-xs text-[var(--ink-500)]">{product.category}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-[var(--ink-900)]">{product.name}</p>
+                        <p className="text-xs text-[var(--ink-500)]">{product.category}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

@@ -1,11 +1,16 @@
 'use client'
-import { productsDummyData, userDummyData } from "@/assets/assets";
 import { convertUSDToINR } from "@/lib/currencyUtils";
 import { useAuth, useUser } from "@clerk/nextjs";
 import axios from "axios";
-import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import {
+    buildCartKey,
+    getCartItemUnitPriceInr,
+    getCartProductQuantity,
+    parseCartKey
+} from "@/lib/cartUtils";
 
 export const AppContext = createContext();
 
@@ -17,6 +22,8 @@ export const AppContextProvider = (props) => {
 
     const currency = process.env.NEXT_PUBLIC_CURRENCY
     const router = useRouter()
+    const pathname = usePathname()
+    const currentPathname = pathname || ""
 
     const { user } = useUser()
     const { getToken } = useAuth()
@@ -31,26 +38,32 @@ export const AppContextProvider = (props) => {
     const [chatMessages, setChatMessages] = useState(null)
     const [isChatOpen, setIsChatOpen] = useState(false)
 
-    const fetchProductData = async () => {
-        
-        try {
-            
-            const {data} = await axios.get('/api/product/list')
+    const shouldLoadProductCatalog =
+      currentPathname === "/" ||
+      currentPathname.startsWith("/all-products") ||
+      currentPathname.startsWith("/product") ||
+      currentPathname.startsWith("/cart") ||
+      currentPathname.startsWith("/wishlist");
 
-            if(data.success){
+    const fetchProductData = useCallback(async ({ signal } = {}) => {
+        try {
+            const { data } = await axios.get('/api/product/list', { signal })
+
+            if (data.success) {
                 setProducts(data.products)
-                setProductsLoading(false)
             } else {
                 toast.error(data.message)
-                setProductsLoading(false)
+            }
+        } catch (error) {
+            if (error?.code === "ERR_CANCELED" || error?.name === "CanceledError") {
+                return;
             }
 
-        } catch (error) {
             toast.error(error.message)
+        } finally {
             setProductsLoading(false)
         }
-
-    }
+    }, [])
 
     const fetchUserData = async () => {
         try {
@@ -76,13 +89,20 @@ export const AppContextProvider = (props) => {
         }
     }
 
-    const addToCart = async (itemId, color = '') => {
-        const cartKey = color ? `${itemId}_${color}` : itemId;
+    const addToCart = async (itemId, variantLabel = '', variantMeta = {}) => {
+        const cartKey = buildCartKey(itemId, variantLabel, variantMeta);
         let cartData = structuredClone(cartItems);
-        const currentQty = cartData[cartKey] ?? 0;
         const product = products.find((item) => item._id === itemId);
+        const currentQty = cartData[cartKey] ?? 0;
+        const productQtyInCart = getCartProductQuantity(cartData, itemId);
+        const remainingStock = product ? Math.max(0, product.stock - productQtyInCart) : Infinity;
 
-        if (product && currentQty >= product.stock) {
+        if (product && remainingStock <= 0) {
+            toast.error(`Only ${product.stock} items are available in stock.`)
+            return;
+        }
+
+        if (product && currentQty >= remainingStock) {
             toast.error(`Only ${product.stock} items are available in stock.`)
             return;
         }
@@ -112,10 +132,11 @@ export const AppContextProvider = (props) => {
     const updateCartQuantity = async (cartKey, quantity) => {
 
         let cartData = structuredClone(cartItems);
-        const productId = cartKey.split('_')[0];
+        const { productId } = parseCartKey(cartKey);
         const product = products.find((item) => item._id === productId);
         const safeQuantity = Number.isNaN(Number(quantity)) ? 0 : Number(quantity);
-        const maxQuantity = product ? product.stock : Infinity;
+        const otherQuantities = getCartProductQuantity(cartData, productId, cartKey);
+        const maxQuantity = product ? Math.max(0, product.stock - otherQuantities) : Infinity;
 
         if (safeQuantity > maxQuantity) {
             toast.error(`Only ${maxQuantity} items are available in stock.`)
@@ -153,16 +174,14 @@ export const AppContextProvider = (props) => {
     const getCartAmount = () => {
         let totalAmount = 0;
         for (const cartKey in cartItems) {
-            const productId = cartKey.split('_')[0];
+            const { productId, variantPriceInr } = parseCartKey(cartKey);
             let itemInfo = products.find((product) => product._id === productId);
             if (itemInfo && cartItems[cartKey] > 0) {
-                totalAmount += itemInfo.offerPrice * cartItems[cartKey];
+                totalAmount += getCartItemUnitPriceInr(itemInfo, { variantPriceInr }) * cartItems[cartKey];
             }
         }
 
-        // Convert total USD amount into INR before returning
-        const inrAmount = convertUSDToINR(Math.floor(totalAmount * 100) / 100);
-        return Math.floor(inrAmount * 100) / 100;
+        return Math.floor(totalAmount * 100) / 100;
     }
 
     const toggleWishlist = async (productId) => {
@@ -191,8 +210,24 @@ export const AppContextProvider = (props) => {
     }
 
     useEffect(() => {
-        fetchProductData()
-    }, [])
+        if (!shouldLoadProductCatalog) {
+            setProductsLoading(false)
+            return undefined
+        }
+
+        if (products.length > 0) {
+            setProductsLoading(false)
+            return undefined
+        }
+
+        const controller = new AbortController()
+        setProductsLoading(true)
+        fetchProductData({ signal: controller.signal })
+
+        return () => {
+            controller.abort()
+        }
+    }, [fetchProductData, products.length, shouldLoadProductCatalog])
 
     useEffect(() => {
         if (user) {

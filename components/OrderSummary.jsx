@@ -1,182 +1,254 @@
-import { addressDummyData } from "@/assets/assets";
 import { useAppContext } from "@/context/AppContext";
-import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
+import { formatPrice } from "@/lib/currencyUtils";
+import {
+  getCartItemOriginalUnitPriceInr,
+  getCartItemUnitPriceInr,
+  parseCartKey
+} from "@/lib/cartUtils";
+import { getProductPrimaryImage, getProductVariantImage } from "@/lib/productDisplay";
 import { getGamePromo, getUnusedUserGameCoupon, normalizePromoCode } from "@/lib/promoCodes";
 import axios from "axios";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 
 const OrderSummary = () => {
+  const {
+    currency,
+    router,
+    getToken,
+    user,
+    userData,
+    fetchUserData,
+    products,
+    cartItems,
+    setCartItems
+  } = useAppContext();
 
-  const { currency, router, getCartCount, getCartAmount, getToken, user, userData, fetchUserData, products, cartItems, setCartItems } = useAppContext()
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
   const [userAddresses, setUserAddresses] = useState([]);
   const [promoCode, setPromoCode] = useState("");
-  const [promoStatus, setPromoStatus] = useState(null); // 'success' or 'error'
+  const [promoStatus, setPromoStatus] = useState(null);
   const [promoMessage, setPromoMessage] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("COD");
   const [submittingOrder, setSubmittingOrder] = useState(false);
 
   const SHIPPING_DEFAULT = 50;
+  const COUPON_DISCOUNT_RATE = 0.10;
 
   const fetchUserAddresses = useCallback(async () => {
     try {
-      
-      const token = await getToken()
-      const {data} = await axios.get('/api/user/get-address', {headers: {Authorization: `Bearer ${token}`}})
+      const token = await getToken();
+      const { data } = await axios.get("/api/user/get-address", { headers: { Authorization: `Bearer ${token}` } });
       if (data.success) {
-        setUserAddresses(data.addresses)
-        if(data.addresses.length > 0) {
-          setSelectedAddress(data.addresses[0])
+        setUserAddresses(data.addresses);
+        if (data.addresses.length > 0) {
+          setSelectedAddress(data.addresses[0]);
         }
       } else {
-        toast.error(data.message)
+        toast.error(data.message);
       }
-
     } catch (error) {
-      toast.error(error.message)
+      toast.error(error.message);
     }
-  }, [getToken])
+  }, [getToken]);
 
   const handleAddressSelect = (address) => {
     setSelectedAddress(address);
     setIsDropdownOpen(false);
   };
 
-  const COUPON_DISCOUNT_RATE = 0.10;
+  const cartProducts = useMemo(() => {
+    return Object.entries(cartItems)
+      .map(([cartKey, qty]) => {
+        const parsedKey = parseCartKey(cartKey);
+        const product = products.find((item) => item._id === parsedKey.productId);
+        const quantity = Number(qty) || 0;
 
-  const cartProducts = Object.entries(cartItems)
-    .map(([cartKey, qty]) => {
-      const productId = cartKey.split('_')[0];
-      const color = cartKey.split('_')[1] || '';
-      const product = products.find((item) => item._id === productId);
-      if (!product || qty <= 0) return null;
-      return {
-        ...product,
-        quantity: qty,
-        color: color,
-        cartKey: cartKey,
-        promoCode: product.promoCode || "",
-        lineTotalInr: Math.round(convertUSDToINR(product.offerPrice * qty)),
-        originalLineTotalInr: Math.round(convertUSDToINR(product.price * qty)),
-        shippingFee: 50, // Each product has its own shipping fee
-      };
-    })
-    .filter(Boolean);
+        if (!product || quantity <= 0) return null;
 
-  const originalSubTotal = cartProducts.reduce((acc, item) => acc + item.originalLineTotalInr, 0);
-  const offerSubTotal = cartProducts.reduce((acc, item) => acc + item.lineTotalInr, 0);
+        const unitPriceInr = getCartItemUnitPriceInr(product, parsedKey);
+        const originalUnitPriceInr = getCartItemOriginalUnitPriceInr(product, parsedKey);
+        const variantImage = getProductVariantImage(product, parsedKey);
+        const productImage = variantImage || getProductPrimaryImage(product);
 
-  // Calculate total shipping fee (50 per product)
-  const totalShippingFee = cartProducts.reduce((acc, item) => acc + item.shippingFee, 0);
+        return {
+          ...product,
+          quantity,
+          cartKey,
+          variantId: parsedKey.variantId,
+          variantLabel: parsedKey.variantLabel,
+          variantType: parsedKey.variantType,
+          variantPriceInr: parsedKey.variantPriceInr ?? unitPriceInr,
+          variantOriginalPriceInr: parsedKey.variantOriginalPriceInr ?? originalUnitPriceInr,
+          productImage,
+          promoCode: product.promoCode || "",
+          unitPriceInr,
+          originalUnitPriceInr,
+          lineTotalInr: Math.round(unitPriceInr * quantity),
+          originalLineTotalInr: Math.round(originalUnitPriceInr * quantity),
+          shippingFee: SHIPPING_DEFAULT
+        };
+      })
+      .filter(Boolean);
+  }, [cartItems, products]);
+
+  const originalSubTotal = useMemo(
+    () => cartProducts.reduce((acc, item) => acc + item.originalLineTotalInr, 0),
+    [cartProducts]
+  );
+
+  const offerSubTotal = useMemo(
+    () => cartProducts.reduce((acc, item) => acc + item.lineTotalInr, 0),
+    [cartProducts]
+  );
+
+  const totalShippingFee = useMemo(
+    () => cartProducts.reduce((acc, item) => acc + item.shippingFee, 0),
+    [cartProducts]
+  );
 
   const promoCodeNormalized = normalizePromoCode(promoCode);
   const gamePromo = getGamePromo(promoCodeNormalized);
   const userGameCoupon = getUnusedUserGameCoupon(userData, promoCodeNormalized);
-  const validFreeShipping = gamePromo?.type === 'shipping';
+  const validFreeShipping = gamePromo?.type === "shipping";
+  const validProductPromo = cartProducts.some(
+    (item) => item.promoCode && item.promoCode.toUpperCase() === promoCodeNormalized
+  );
 
-  const validProductPromo = cartProducts.some(item => item.promoCode && item.promoCode.toUpperCase() === promoCodeNormalized);
+  const productPromoDiscount = useMemo(() => {
+    if (promoStatus !== "success" || !validProductPromo) return 0;
 
-  // Only apply coupon discount if promo code has been applied (clicked Apply button)
-  const productPromoDiscount = (promoStatus === 'success' && validProductPromo) ? cartProducts.reduce((acc, item) => {
-    if (item.promoCode && item.promoCode.toUpperCase() === promoCodeNormalized) {
-      return acc + Math.round(item.lineTotalInr * COUPON_DISCOUNT_RATE);
-    }
-    return acc;
-  }, 0) : 0;
+    return cartProducts.reduce((acc, item) => {
+      if (item.promoCode && item.promoCode.toUpperCase() === promoCodeNormalized) {
+        return acc + Math.round(item.lineTotalInr * COUPON_DISCOUNT_RATE);
+      }
+      return acc;
+    }, 0);
+  }, [cartProducts, promoCodeNormalized, promoStatus, validProductPromo]);
 
-  const gamePromoDiscount = (promoStatus === 'success' && gamePromo?.type === 'percent')
-    ? Math.round(offerSubTotal * (gamePromo.value / 100))
-    : 0;
+  const gamePromoDiscount = useMemo(() => {
+    if (promoStatus !== "success" || gamePromo?.type !== "percent") return 0;
+    return Math.round(offerSubTotal * (gamePromo.value / 100));
+  }, [gamePromo, offerSubTotal, promoStatus]);
 
-  const validPromo = promoStatus === 'success' && (validFreeShipping || validProductPromo || Boolean(userGameCoupon));
-
+  const validPromo = promoStatus === "success" && (validFreeShipping || validProductPromo || Boolean(userGameCoupon));
   const discount = validProductPromo ? productPromoDiscount : gamePromoDiscount;
-  
-  // Shipping fee reduction only for products with valid coupon
-  const shippingDiscount = (promoStatus === 'success' && validPromo) ? 
-    cartProducts.reduce((acc, item) => {
+
+  const shippingDiscount = useMemo(() => {
+    if (promoStatus !== "success" || !validPromo) return 0;
+
+    return cartProducts.reduce((acc, item) => {
       if (validFreeShipping) {
         return acc + item.shippingFee;
       }
+
       if (item.promoCode && item.promoCode.toUpperCase() === promoCodeNormalized) {
         return acc + item.shippingFee;
       }
+
       return acc;
-    }, 0) : 0;
+    }, 0);
+  }, [cartProducts, promoCodeNormalized, promoStatus, validFreeShipping, validPromo]);
 
   const effectiveShippingFee = totalShippingFee - shippingDiscount;
-  
-  // Add UPI/Card discount for prepaid methods
-  const paymentDiscount = (paymentMethod === 'UPI' || paymentMethod === 'CARD') ? 60 : 0;
+  const paymentDiscount = paymentMethod === "UPI" || paymentMethod === "CARD" ? 60 : 0;
   const totalAmount = offerSubTotal - discount + effectiveShippingFee - paymentDiscount;
 
   const applyPromoCode = () => {
     if (!promoCode.trim()) {
-      setPromoStatus('error');
-      setPromoMessage('Please enter a promo code');
+      setPromoStatus("error");
+      setPromoMessage("Please enter a promo code");
       return;
     }
 
-    const promoCodeNormalized = normalizePromoCode(promoCode);
-    const gamePromo = getGamePromo(promoCodeNormalized);
-    const userGameCoupon = getUnusedUserGameCoupon(userData, promoCodeNormalized);
-    const validFreeShipping = gamePromo?.type === 'shipping' && Boolean(userGameCoupon);
-    const validProductPromo = cartProducts.some(item => item.promoCode && item.promoCode.toUpperCase() === promoCodeNormalized);
+    const normalizedCode = normalizePromoCode(promoCode);
+    const promo = getGamePromo(normalizedCode);
+    const gameCoupon = getUnusedUserGameCoupon(userData, normalizedCode);
+    const shippingValid = promo?.type === "shipping" && Boolean(gameCoupon);
+    const productPromoValid = cartProducts.some(
+      (item) => item.promoCode && item.promoCode.toUpperCase() === normalizedCode
+    );
 
-    if (validFreeShipping) {
-      setPromoStatus('success');
-      setPromoMessage(`Free shipping code applied: ${promoCodeNormalized}`);
-    } else if (gamePromo?.type === 'message') {
-      setPromoStatus('info');
-      setPromoMessage(`🍀 ${gamePromo.label} - Try again in the next game!`);
-    } else if (gamePromo?.type === 'percent' && userGameCoupon) {
-      setPromoStatus('success');
-      setPromoMessage(`Game reward applied: ${promoCodeNormalized} for ${gamePromo.value}% off the order`);
-    } else if (validProductPromo) {
-      setPromoStatus('success');
-      setPromoMessage(`Promo code applied: ${promoCodeNormalized}. Discount applied for matched product(s)`);
+    if (shippingValid) {
+      setPromoStatus("success");
+      setPromoMessage(`Free shipping code applied: ${normalizedCode}`);
+    } else if (promo?.type === "message") {
+      setPromoStatus("info");
+      setPromoMessage(`🍀 ${promo.label} - Try again in the next game!`);
+    } else if (promo?.type === "percent" && gameCoupon) {
+      setPromoStatus("success");
+      setPromoMessage(`Game reward applied: ${normalizedCode} for ${promo.value}% off the order`);
+    } else if (productPromoValid) {
+      setPromoStatus("success");
+      setPromoMessage(`Promo code applied: ${normalizedCode}. Discount applied for matched product(s)`);
     } else {
-      setPromoStatus('error');
-      setPromoMessage('Invalid promo code');
+      setPromoStatus("error");
+      setPromoMessage("Invalid promo code");
     }
   };
 
   const createOrder = async () => {
-    if (submittingOrder) return
+    if (submittingOrder) return;
 
     try {
-      setSubmittingOrder(true)
+      setSubmittingOrder(true);
 
       if (!selectedAddress) {
-        return toast.error('Please select an address')
+        return toast.error("Please select an address");
       }
 
-      let cartItemsArray = Object.keys(cartItems).map((key) => {
-        const productId = key.split('_')[0];
-        const color = key.split('_')[1] || '';
-        return { product: productId, quantity: cartItems[key], color: color };
-      });
-      cartItemsArray = cartItemsArray.filter(item => item.quantity > 0)
+      const cartItemsArray = cartProducts
+        .map((item) => {
+          const productId = String(item._id ?? "").trim();
+          if (!productId) return null;
+
+          return {
+            product: productId,
+            productId,
+            quantity: item.quantity,
+            color: item.variantLabel,
+            variantLabel: item.variantLabel,
+            variantType: item.variantType,
+            variantId: item.variantId,
+            variantPriceInr: item.unitPriceInr,
+            variantOriginalPriceInr: item.originalUnitPriceInr,
+            offerPriceInr: item.unitPriceInr,
+            originalPriceInr: item.originalUnitPriceInr,
+            productName: item.name || "",
+            productImage: item.productImage
+          };
+        })
+        .filter((item) => item && item.quantity > 0);
 
       if (cartItemsArray.length === 0) {
-        return toast.error('Cart is empty')
+        return toast.error("Cart is empty");
       }
 
-      const detailedInvoiceItems = cartProducts.map((item) => ({
-        product: item._id,
-        productName: item.name,
-        color: item.color,
-        quantity: item.quantity,
-        offerPriceInr: Math.round(item.lineTotalInr / item.quantity),
-        shippingFee: item.shippingFee,
-        promoCode: item.promoCode || ''
-      }))
+      const detailedInvoiceItems = cartProducts
+        .map((item) => {
+          const productId = String(item._id ?? "").trim();
+          if (!productId) return null;
 
-      // If payment method is UPI or CARD, redirect to payment page
-      if (paymentMethod === 'UPI' || paymentMethod === 'CARD') {
+          return {
+            product: productId,
+            productId,
+            productName: item.name,
+            productImage: item.productImage,
+            color: item.variantLabel,
+            variantLabel: item.variantLabel,
+            variantType: item.variantType,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            offerPriceInr: Math.round(item.unitPriceInr),
+            originalPriceInr: Math.round(item.originalUnitPriceInr),
+            shippingFee: item.shippingFee,
+            promoCode: item.promoCode || ""
+          };
+        })
+        .filter(Boolean);
+
+      if (paymentMethod === "UPI" || paymentMethod === "CARD") {
         const paymentData = {
           address: selectedAddress,
           items: cartItemsArray,
@@ -188,27 +260,29 @@ const OrderSummary = () => {
           paymentDiscountInr: paymentDiscount,
           totalInr: totalAmount,
           promoCode: normalizePromoCode(promoCode),
-          paymentMethod: paymentMethod
-        }
-        localStorage.setItem('sagecart-payment-data', JSON.stringify(paymentData))
-        router.push('/payment')
-        return
+          paymentMethod
+        };
+        localStorage.setItem("sagecart-payment-data", JSON.stringify(paymentData));
+        router.push("/payment");
+        return;
       }
 
-      // If COD, create order directly
-      const token = await getToken()
-
-      const { data } = await axios.post('/api/order/create',{
-        address: selectedAddress._id,
-        items: cartItemsArray,
-        promoCode: normalizePromoCode(promoCode),
-        paymentMethod
-      },{
-        headers:{Authorization: `Bearer ${token}`}
-      })
+      const token = await getToken();
+      const { data } = await axios.post(
+        "/api/order/create",
+        {
+          address: selectedAddress._id,
+          items: cartItemsArray,
+          promoCode: normalizePromoCode(promoCode),
+          paymentMethod
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
 
       if (data.success) {
-        toast.success(data.message)
+        toast.success(data.message);
 
         const payloadForInvoice = {
           order: data.order,
@@ -221,41 +295,40 @@ const OrderSummary = () => {
           paymentDiscountInr: paymentDiscount,
           totalInr: totalAmount,
           promoCode: validPromo ? promoCodeNormalized : "",
-          paymentMethod: paymentMethod,
+          paymentMethod,
           placedAt: new Date().toLocaleString()
         };
 
-        localStorage.setItem('sagecart-last-order', JSON.stringify(payloadForInvoice));
+        localStorage.setItem("sagecart-last-order", JSON.stringify(payloadForInvoice));
 
-        setCartItems({})
-        await fetchUserData()
-        router.push('/order-placed')
+        setCartItems({});
+        await fetchUserData();
+        router.push("/order-placed");
       } else {
-        toast.error(data.message)
+        toast.error(data.message);
       }
-
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message
-      const unavailableProducts = error.response?.data?.unavailableProducts
+      const errorMessage = error.response?.data?.message || error.message;
+      const unavailableProducts = error.response?.data?.unavailableProducts;
 
       if (unavailableProducts?.length) {
         unavailableProducts.forEach((item) => {
-          const productLabel = item.productName || item.productId || 'Item'
-          toast.error(`${productLabel}: ${item.reason}${item.available != null ? ` (available: ${item.available})` : ''}`)
-        })
+          const productLabel = item.productName || item.productId || "Item";
+          toast.error(`${productLabel}: ${item.reason}${item.available != null ? ` (available: ${item.available})` : ""}`);
+        });
       } else {
-        toast.error(errorMessage)
+        toast.error(errorMessage);
       }
     } finally {
-      setSubmittingOrder(false)
+      setSubmittingOrder(false);
     }
-  }
+  };
 
   useEffect(() => {
     if (user) {
       fetchUserAddresses();
     }
-  }, [fetchUserAddresses, user])
+  }, [fetchUserAddresses, user]);
 
   if (cartProducts.length === 0) {
     return (
@@ -287,8 +360,12 @@ const OrderSummary = () => {
                   ? `${selectedAddress.fullName}, ${selectedAddress.area}, ${selectedAddress.city}, ${selectedAddress.state}`
                   : "Select Address"}
               </span>
-              <svg className={`w-5 h-5 inline float-right transition-transform duration-200 ${isDropdownOpen ? "rotate-0" : "-rotate-90"}`}
-                xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#6B7280"
+              <svg
+                className={`w-5 h-5 inline float-right transition-transform duration-200 ${isDropdownOpen ? "rotate-0" : "-rotate-90"}`}
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="#6B7280"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
               </svg>
@@ -316,30 +393,29 @@ const OrderSummary = () => {
           </div>
         </div>
 
-        {cartProducts.length > 0 && (
-          <div className="bg-white border p-3 rounded-md">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Items review</h3>
-            <div className="space-y-2 text-sm">
-              {cartProducts.map((item) => (
-                <div key={item.cartKey} className="flex justify-between items-start border-b pb-2 last:border-b-0">
-                  <div>
-                    <p className="text-gray-700 font-medium">{item.name} {item.color ? `(${item.color})` : ''} × {item.quantity}</p>
-                    <p className="text-xs text-gray-500">
-                      Original: {formatPrice(convertUSDToINR(item.price), currency)} | 
-                      Offer: {formatPrice(convertUSDToINR(item.offerPrice), currency)}
-                    </p>
-                    {item.promoCode && (
-                      <p className="text-xs text-green-600">Coupon: {item.promoCode}</p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">{formatPrice(item.lineTotalInr, currency)}</p>
-                  </div>
+        <div className="bg-white border p-3 rounded-md">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Items review</h3>
+          <div className="space-y-2 text-sm">
+            {cartProducts.map((item) => (
+              <div key={item.cartKey} className="flex justify-between items-start border-b pb-2 last:border-b-0">
+                <div>
+                  <p className="text-gray-700 font-medium">
+                    {item.name} {item.variantLabel ? `(${item.variantLabel})` : ""} × {item.quantity}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Original: {formatPrice(item.originalUnitPriceInr, currency)} | Offer: {formatPrice(item.unitPriceInr, currency)}
+                  </p>
+                  {item.promoCode && (
+                    <p className="text-xs text-green-600">Coupon: {item.promoCode}</p>
+                  )}
                 </div>
-              ))}
-            </div>
+                <div className="text-right">
+                  <p className="font-semibold text-gray-800">{formatPrice(item.lineTotalInr, currency)}</p>
+                </div>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
 
         <div>
           <label className="text-base font-medium uppercase text-gray-600 block mb-2">
@@ -361,7 +437,7 @@ const OrderSummary = () => {
             </button>
           </div>
           {promoMessage && (
-            <p className={`mt-2 text-sm ${promoStatus === 'success' ? 'text-green-700' : promoStatus === 'info' ? 'text-blue-600' : 'text-red-700'}`}>
+            <p className={`mt-2 text-sm ${promoStatus === "success" ? "text-green-700" : promoStatus === "info" ? "text-blue-600" : "text-red-700"}`}>
               {promoMessage}
             </p>
           )}
@@ -394,10 +470,10 @@ const OrderSummary = () => {
           <div className="flex justify-between">
             <p className="text-gray-600">Shipping Fee</p>
             <p className="font-medium text-gray-800">
-              {effectiveShippingFee === 0 ? 'Free' : formatPrice(effectiveShippingFee, currency)}
+              {effectiveShippingFee === 0 ? "Free" : formatPrice(effectiveShippingFee, currency)}
             </p>
           </div>
-          {(paymentMethod === 'UPI' || paymentMethod === 'CARD') && (
+          {(paymentMethod === "UPI" || paymentMethod === "CARD") && (
             <div className="flex justify-between text-base font-medium text-green-600">
               <p>UPI/Card Discount</p>
               <p>-{formatPrice(paymentDiscount, currency)}</p>
@@ -427,11 +503,10 @@ const OrderSummary = () => {
         disabled={submittingOrder}
         className="brand-button w-full py-3 mt-5 disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {submittingOrder ? 'Placing Order...' : 'Place Order'}
+        {submittingOrder ? "Placing Order..." : "Place Order"}
       </button>
     </div>
   );
 };
 
 export default OrderSummary;
-

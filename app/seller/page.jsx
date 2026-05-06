@@ -1,11 +1,12 @@
 'use client'
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { assets } from "@/assets/assets";
 import Image from "next/image";
 import { useAppContext } from "@/context/AppContext";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { convertINRToUSD } from "@/lib/currencyUtils";
+import { getCategoryVariantConfig, inferCategoryVariantMode, parseDelimitedValues } from "@/lib/productVariantRules";
 
 const AddProduct = () => {
   const { getToken } = useAppContext()
@@ -18,12 +19,63 @@ const AddProduct = () => {
   const [offerPrice, setOfferPrice] = useState('');
   const [stock, setStock] = useState('');
   const [promoCode, setPromoCode] = useState('');
-  const [colors, setColors] = useState('');
+  const [colorValues, setColorValues] = useState('');
+  const [variantValues, setVariantValues] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+
+  const categoryOptions = useMemo(() => ([
+    "Clothing",
+    "Topwear",
+    "Bottomwear",
+    "Winter Wear",
+    "Earphone",
+    "Apparel",
+    "Fashion",
+    "Headphone",
+    "Watch",
+    "Smartphone",
+    "Mobile",
+    "Phone",
+    "Laptop",
+    "Tablet",
+    "Computer",
+    "Desktop",
+    "PC",
+    "Camera",
+    "Accessories",
+    "Phone & Tablet Accessories",
+    "Dress",
+    "Shirt",
+    "T-Shirt",
+    "Pant",
+    "Jeans",
+    "Shoes",
+    "Footwear",
+    "Skirt",
+    "Kurti",
+    "Saree",
+    "Bags",
+    "Kurta Sets",
+    "Ethnic Wear",
+    "Dupatta",
+    "Bodysuit",
+    "Dungarees",
+    "Innerwear",
+    "Flats",
+    "Beauty",
+    "Skincare",
+    "Makeup"
+  ]), []);
+
+  const variantConfig = useMemo(() => getCategoryVariantConfig(category), [category]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsUploading(true);
+
+    const parsedVariantValues = parseDelimitedValues(variantValues);
+    const parsedColorValues = parseDelimitedValues(colorValues);
+    const variantMode = inferCategoryVariantMode(category);
 
     const formData = new FormData()
 
@@ -34,7 +86,9 @@ const AddProduct = () => {
     formData.append('offerPrice', convertINRToUSD(offerPrice))
     formData.append('stock', stock || '0')
     formData.append('promoCode', promoCode)
-    formData.append('colors', colors)
+    formData.append('variantMode', variantMode)
+    formData.append('colorValues', parsedColorValues.join(', '))
+    formData.append('variantValues', parsedVariantValues.join(', '))
 
     for (let index = 0; index < files.length; index++) {
       formData.append('images', files[index])
@@ -56,7 +110,8 @@ const AddProduct = () => {
         setPrice('');
         setOfferPrice('');
         setPromoCode('');
-        setColors('');
+        setColorValues('');
+        setVariantValues('');
       } else {
         toast.error(data.message)
       }
@@ -135,20 +190,19 @@ const AddProduct = () => {
             <label className="text-base font-medium" htmlFor="category">
               Category
             </label>
-            <select
+            <input
               id="category"
+              list="product-category-options"
               className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
               onChange={(e) => setCategory(e.target.value)}
-              defaultValue={category}
-            >
-              <option value="Earphone">Earphone</option>
-              <option value="Headphone">Headphone</option>
-              <option value="Watch">Watch</option>
-              <option value="Smartphone">Smartphone</option>
-              <option value="Laptop">Laptop</option>
-              <option value="Camera">Camera</option>
-              <option value="Accessories">Accessories</option>
-            </select>
+              value={category}
+              placeholder="Type or choose a category"
+            />
+            <datalist id="product-category-options">
+              {categoryOptions.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
           </div>
 
           <div className="flex flex-col gap-1 w-full min-w-0">
@@ -212,17 +266,41 @@ const AddProduct = () => {
         </div>
 
         <div className="flex flex-col gap-1 w-full max-w-none">
-          <label className="text-base font-medium" htmlFor="product-colors">
-            Product Colors <span className="text-gray-500 text-sm">(Optional)</span>
-          </label>
-          <input
-            id="product-colors"
-            type="text"
-            placeholder="e.g. Red, Blue, Green"
-            className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
-            value={colors}
-            onChange={(e) => setColors(e.target.value)}
-          />
+          {variantConfig.mode === "storage" && (
+            <div className="mb-4 flex flex-col gap-1">
+              <label className="text-base font-medium" htmlFor="product-colors">
+                Available Colors <span className="text-gray-500 text-sm">(Optional)</span>
+              </label>
+              <input
+                id="product-colors"
+                type="text"
+                placeholder="Black, Blue, White"
+                className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
+                value={colorValues}
+                onChange={(e) => setColorValues(e.target.value)}
+              />
+              <p className="text-xs text-gray-500">
+                Enter each color separated by commas or new lines. Match the uploaded images to the same order.
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1">
+            <label className="text-base font-medium" htmlFor="product-variants">
+              {variantConfig.label} <span className="text-gray-500 text-sm">(Optional)</span>
+            </label>
+            <input
+              id="product-variants"
+              type="text"
+              placeholder={variantConfig.placeholder}
+              className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
+              value={variantValues}
+              onChange={(e) => setVariantValues(e.target.value)}
+            />
+            <p className="text-xs text-gray-500">
+              {variantConfig.helperText} Upload the main image first, then the option images in the same order.
+            </p>
+          </div>
         </div>
 
         <button

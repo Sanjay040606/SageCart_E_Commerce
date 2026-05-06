@@ -10,6 +10,7 @@ import {
   canCancelOrder,
   canRequestReturn,
   getOrderMilestones,
+  getReturnMilestones,
   getStatusTimestamp,
   getTimelineEntry,
   hasCanceledFlow,
@@ -25,6 +26,8 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import Chatbot from '@/components/Chatbot'
 import { useParams } from 'next/navigation'
+import { getProductPrimaryImage, normalizeProductImageUrl } from '@/lib/productDisplay'
+import { resolveOrderProductId } from '@/lib/orderUtils'
 
 const TRACKING_STEPS = [
   ORDER_STATUSES.CONFIRMED,
@@ -72,7 +75,14 @@ const getStatusIcon = (status) => {
 const getTimelineStatusDate = (order, status) => {
   const timelineEntry = getTimelineEntry(order, status)
   const { shippedEta, deliveryEta } = getOrderMilestones(order || {})
+  const returnMilestones = getReturnMilestones(order || {})
 
+  if (status === ORDER_STATUSES.REFUNDED && hasReturnFlow(order) && order?.status !== ORDER_STATUSES.REFUNDED) {
+    return formatStatusDate(returnMilestones?.refundCompletedEta || order?.refundCompletedAt)
+  }
+  if (status === ORDER_STATUSES.REFUNDED && order?.refundCompletedAt) {
+    return formatStatusDate(order.refundCompletedAt)
+  }
   if (timelineEntry) return formatStatusDate(timelineEntry.timestamp)
   if (status === ORDER_STATUSES.CONFIRMED) return formatStatusDate(order?.date)
   if (status === ORDER_STATUSES.SHIPPED) return formatStatusDate(order?.shippedAt || shippedEta)
@@ -81,6 +91,9 @@ const getTimelineStatusDate = (order, status) => {
   if (status === ORDER_STATUSES.CANCELED) return formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.CANCELED, order?.canceledAt))
   if (status === ORDER_STATUSES.REFUND_INITIATED) return formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.REFUND_INITIATED, order?.refundRequestedAt))
   if (status === ORDER_STATUSES.REFUNDED) return formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.REFUNDED, order?.refundCompletedAt))
+  if (status === ORDER_STATUSES.RETURN_CONFIRMED) return formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.RETURN_CONFIRMED, order?.returnRequestedAt))
+  if (status === ORDER_STATUSES.OUT_FOR_PICKUP) return formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.OUT_FOR_PICKUP, returnMilestones?.outForPickupEta))
+  if (status === ORDER_STATUSES.RETURNED) return formatStatusDate(getStatusTimestamp(order, ORDER_STATUSES.RETURNED, returnMilestones?.returnedEta))
   return 'Not yet'
 }
 
@@ -171,13 +184,20 @@ const OrderDetail = () => {
     if (!order) return null
 
     const { shippedEta, deliveryEta, returnDeadline } = getOrderMilestones(order)
+    const returnMilestones = getReturnMilestones(order)
     const canceledFlow = hasCanceledFlow(order)
     const returnFlow = hasReturnFlow(order)
     const cancelAvailable = canCancelOrder(order)
     const returnAvailable = canRequestReturn(order)
     const canceledAt = getStatusTimestamp(order, ORDER_STATUSES.CANCELED, order.canceledAt)
     const refundInitiatedAt = getStatusTimestamp(order, ORDER_STATUSES.REFUND_INITIATED, order.refundRequestedAt)
-    const refundedAt = getStatusTimestamp(order, ORDER_STATUSES.REFUNDED, order.refundCompletedAt)
+    const canceledRefundedAt = getStatusTimestamp(order, ORDER_STATUSES.REFUNDED, order.refundCompletedAt)
+    const returnConfirmedAt = getStatusTimestamp(order, ORDER_STATUSES.RETURN_CONFIRMED, order.returnRequestedAt)
+    const outForPickupAt = getStatusTimestamp(order, ORDER_STATUSES.OUT_FOR_PICKUP, returnMilestones?.outForPickupEta)
+    const returnedAt = getStatusTimestamp(order, ORDER_STATUSES.RETURNED, returnMilestones?.returnedEta)
+    const returnRefundedAt = order.status === ORDER_STATUSES.REFUNDED
+      ? getStatusTimestamp(order, ORDER_STATUSES.REFUNDED, order.refundCompletedAt || returnMilestones?.refundCompletedEta)
+      : returnMilestones?.refundCompletedEta
 
     let steps = [...TRACKING_STEPS]
     if (canceledFlow) {
@@ -196,31 +216,42 @@ const OrderDetail = () => {
     }
 
     let currentStatus = order.status || ORDER_STATUSES.CONFIRMED
+    if (returnFlow && currentStatus === ORDER_STATUSES.REFUND_INITIATED) {
+      currentStatus = ORDER_STATUSES.RETURNED
+    }
     let headlineStatus = currentStatus
     let infoMessage = 'Your order is confirmed and is waiting for shipment.'
 
     if (canceledFlow && currentStatus === ORDER_STATUSES.REFUNDED) {
       headlineStatus = 'Canceled and Refunded'
-      infoMessage = `Order canceled on ${formatStatusDate(canceledAt)}. Refund completed on ${formatStatusDate(refundedAt)}.`
+      infoMessage = `Order canceled on ${formatStatusDate(canceledAt)}. Refund completed on ${formatStatusDate(canceledRefundedAt)}.`
     } else if (canceledFlow) {
       headlineStatus = isPrepaidOrder(order) ? ORDER_STATUSES.REFUND_INITIATED : ORDER_STATUSES.CANCELED
       infoMessage = isPrepaidOrder(order)
         ? `Order canceled on ${formatStatusDate(canceledAt)}. Refund initiated on ${formatStatusDate(refundInitiatedAt)} and will complete in about ${REFUND_DELAY_HOURS} hours.`
         : `Order canceled on ${formatStatusDate(canceledAt)}. COD order has no refund stage.`
-    } else if (returnFlow && currentStatus === ORDER_STATUSES.REFUNDED) {
-      headlineStatus = 'Return Refunded'
-      infoMessage = `Return completed and refund processed on ${formatStatusDate(order.refundCompletedAt)}.`
+    } else if (returnFlow) {
+      if (currentStatus === ORDER_STATUSES.REFUNDED) {
+        headlineStatus = 'Return Refunded'
+        infoMessage = `Return completed and refund processed on ${formatStatusDate(returnRefundedAt)}.`
+      } else if (currentStatus === ORDER_STATUSES.RETURNED) {
+        headlineStatus = ORDER_STATUSES.RETURNED
+        infoMessage = isPrepaidOrder(order)
+          ? `Item returned on ${formatStatusDate(returnedAt)}. Refund will complete on ${formatStatusDate(returnMilestones?.refundCompletedEta)}.`
+          : `Item returned on ${formatStatusDate(returnedAt)}.`
+      } else if (currentStatus === ORDER_STATUSES.OUT_FOR_PICKUP) {
+        headlineStatus = ORDER_STATUSES.OUT_FOR_PICKUP
+        infoMessage = `Pickup scheduled for ${formatStatusDate(outForPickupAt)}.`
+      } else {
+        headlineStatus = ORDER_STATUSES.RETURN_CONFIRMED
+        infoMessage = `Return confirmed on ${formatStatusDate(returnConfirmedAt)}. Pickup will happen on ${formatStatusDate(returnMilestones?.outForPickupEta)}.`
+      }
     } else if (currentStatus === ORDER_STATUSES.DELIVERED) {
       infoMessage = `Delivered on ${formatStatusDate(order.deliveredAt)}. Return available until ${formatStatusDate(returnDeadline)}.`
     } else if (currentStatus === ORDER_STATUSES.SHIPPED) {
       infoMessage = `Shipped on ${formatStatusDate(order.shippedAt || shippedEta)}.`
     } else {
       infoMessage = `Shipment ETA ${formatStatusDate(shippedEta)}. Delivery ETA ${formatStatusDate(deliveryEta)}.`
-    }
-
-    if (getTimelineEntry(order, ORDER_STATUSES.RETURN_CONFIRMED) && currentStatus !== ORDER_STATUSES.REFUNDED) {
-      headlineStatus = ORDER_STATUSES.RETURN_CONFIRMED
-      infoMessage = `Return confirmed on ${formatStatusDate(getTimelineEntry(order, ORDER_STATUSES.RETURN_CONFIRMED)?.timestamp)}. Pickup will happen today.`
     }
 
     const currentIndex = Math.max(0, steps.indexOf(currentStatus))
@@ -289,7 +320,7 @@ const OrderDetail = () => {
           return {
             ...currentOrder,
             items: currentOrder.items.map((item) => {
-              const currentProductId = item.product?._id?.toString?.() || item.product?.toString?.() || item.product
+              const currentProductId = resolveOrderProductId(item.productId || item.product || item)
               if (currentProductId !== productId || !item.product || typeof item.product !== 'object') {
                 return item
               }
@@ -510,42 +541,48 @@ const OrderDetail = () => {
             </p>
             <div className='space-y-4'>
               {order.items && order.items.map((item, idx) => {
-                const productData = item.product || {}
-                const productImage = productData?.image?.[0]
+                const productData = item.product && typeof item.product === 'object' ? item.product : item
+                const resolvedProductId = resolveOrderProductId(item.productId || item.product || item)
+                const productImage = normalizeProductImageUrl(item.productImage || getProductPrimaryImage(productData))
                 const productName = productData?.name || item.productName || 'Product'
-                const productPrice = convertUSDToINR(productData?.offerPrice || item.offerPrice || 0)
-                const productId = productData?._id?.toString?.() || productData?._id
+                const variantPrice = Number(item.offerPriceInr ?? item.variantPriceInr)
+                const lineTotalInr = Number(item.lineTotalInr || 0)
+                const quantity = Number(item.quantity || 0)
+                const linePrice = quantity > 0 ? Math.round(lineTotalInr / quantity) : 0
+                const productPrice = Number.isFinite(variantPrice) && variantPrice > 0
+                  ? variantPrice
+                  : linePrice > 0
+                    ? linePrice
+                    : convertUSDToINR(productData?.offerPrice || item.offerPriceInr || 0)
+                const productId = resolvedProductId
                 const productReviews = Array.isArray(productData?.reviews) ? productData.reviews : []
                 const myReview = productReviews.find((review) => review.userId === user?.id)
                 const reviewDraft = getReviewDraft(productId, myReview)
                 const canEditReview = reviewAllowed || Boolean(myReview)
+                const variantLabel = item.variantLabel || item.color || ''
 
                 return (
                   <div key={idx} className='pb-4 border-b last:border-b-0'>
                     <div className='flex flex-col gap-4 cursor-pointer rounded-xl p-2 -m-2 hover:bg-gray-50 sm:flex-row' onClick={() => productId && router.push(`/product/${productId}`)}>
-                      <div className='w-20 h-20 bg-gray-100 rounded-lg flex-shrink-0'>
-                        {productImage ? (
-                          <Image
-                            src={productImage}
-                            alt={productName}
-                            width={80}
-                            height={80}
-                            className='w-20 h-20 object-cover rounded-lg'
-                          />
-                        ) : (
-                          <div className='w-20 h-20 flex items-center justify-center text-gray-400'>No image</div>
-                        )}
+                      <div className='w-20 h-20 bg-gray-100 rounded-lg flex-shrink-0 overflow-hidden'>
+                        <Image
+                          src={productImage || assets.box_icon}
+                          alt={productName}
+                          width={80}
+                          height={80}
+                          className='w-20 h-20 object-cover rounded-lg'
+                        />
                       </div>
                       <div className='flex-1'>
-                        <p className='font-semibold text-gray-800'>{productName} {item.color ? `(${item.color})` : ''}</p>
-                        <p className='text-sm text-gray-600'>Quantity: {item.quantity}</p>
+                        <p className='font-semibold text-gray-800'>{productName} {variantLabel ? `(${variantLabel})` : ''}</p>
+                        <p className='text-sm text-gray-600'>Quantity: {quantity}</p>
                         <p className='text-sm font-medium mt-2'>
                           {formatPrice(productPrice, currency)} each
                         </p>
                       </div>
                       <div className='text-left sm:text-right'>
                         <p className='font-semibold'>
-                          {formatPrice(Math.round(productPrice * item.quantity), currency)}
+                          {formatPrice(Math.round(productPrice * quantity), currency)}
                         </p>
                       </div>
                     </div>

@@ -5,6 +5,7 @@ import { v2 as cloudinary } from "cloudinary";
 import authSeller from "@/lib/authSeller";
 import { getProductStatusFromStock } from "@/lib/productStock";
 import { NextResponse } from "next/server";
+import { buildVariantOptionsFromValues, inferCategoryVariantMode, parseDelimitedValues } from "@/lib/productVariantRules";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -12,6 +13,46 @@ cloudinary.config({
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET
 })
+
+const slugifyText = (value) =>
+    String(value ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/&/g, "and")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+
+const buildCombinedStorageVariantOptions = ({
+    colors = [],
+    variants = [],
+    images = [],
+    fallbackImage = ""
+}) => {
+    const colorList = parseDelimitedValues(colors);
+    const variantList = parseDelimitedValues(variants);
+
+    if (!colorList.length || !variantList.length) return [];
+
+    return colorList.flatMap((color, colorIndex) => {
+        const colorImage = String(images[colorIndex] ?? images[0] ?? fallbackImage ?? "").trim();
+
+        return variantList.map((variant, variantIndex) => {
+            const label = `${color} / ${variant}`;
+
+            return {
+                id: slugifyText(`storage-${color}-${variant}-${colorIndex}-${variantIndex}`),
+                label,
+                type: "storage",
+                color,
+                storage: variant,
+                description: `Color: ${color} • Configuration: ${variant}`,
+                image: colorImage ? [colorImage] : [],
+                images: colorImage ? [colorImage] : [],
+                available: true
+            };
+        });
+    });
+};
 
 export async function POST(request) {
 
@@ -34,10 +75,34 @@ export async function POST(request) {
         const offerPrice = formData.get('offerPrice');
         const promoCode = (formData.get('promoCode') || '').trim().toUpperCase();
         const stock = Number(formData.get('stock') || '0');
-        const colorsString = formData.get('colors') || '';
-        const colors = colorsString ? colorsString.split(',').map(c => c.trim()).filter(c => c) : [];
+        const variantMode = String(formData.get('variantMode') || inferCategoryVariantMode(category))
+            .trim()
+            .toLowerCase() || 'variant';
+        const colorValues = formData.get('colorValues') || '';
+        const variantValues = formData.get('variantValues') || '';
+        const parsedColorValues = parseDelimitedValues(colorValues);
+        const parsedVariantValues = parseDelimitedValues(variantValues);
 
         const files = formData.getAll('images');
+        const hasColorEntries = parsedColorValues.length > 0;
+        const hasVariantEntries = parsedVariantValues.length > 0;
+        let resolvedVariantMode = variantMode;
+
+        if (!hasColorEntries && !hasVariantEntries) {
+            resolvedVariantMode = 'variant';
+        } else if (variantMode === 'storage') {
+            if (hasColorEntries && hasVariantEntries) {
+                resolvedVariantMode = 'storage';
+            } else if (hasColorEntries) {
+                resolvedVariantMode = 'color';
+            } else if (hasVariantEntries) {
+                resolvedVariantMode = 'storage';
+            } else {
+                resolvedVariantMode = 'variant';
+            }
+        } else if (!hasVariantEntries) {
+            resolvedVariantMode = 'variant';
+        }
 
         // Validate promo code only if provided
         if (promoCode) {
@@ -74,6 +139,31 @@ export async function POST(request) {
         )
 
         const image = result.map(result => result.secure_url)
+        const fallbackImage = image[0] || '';
+        let variantOptions = buildVariantOptionsFromValues({
+            category,
+            values: parsedVariantValues,
+            images: image,
+            fallbackImage
+        });
+
+        if (resolvedVariantMode === 'storage') {
+            if (hasColorEntries && hasVariantEntries) {
+                variantOptions = buildCombinedStorageVariantOptions({
+                    colors: parsedColorValues,
+                    variants: parsedVariantValues,
+                    images: image,
+                    fallbackImage
+                });
+            } else if (hasColorEntries) {
+                variantOptions = buildVariantOptionsFromValues({
+                    category: "Color",
+                    values: parsedColorValues,
+                    images: image,
+                    fallbackImage
+                });
+            }
+        }
 
         const newProduct = await Product.create({
             userId,
@@ -86,7 +176,14 @@ export async function POST(request) {
             status: getProductStatusFromStock(Math.max(0, stock)),
             image,
             promoCode,
-            colors,
+            colors: resolvedVariantMode === 'color'
+                ? (hasColorEntries ? parsedColorValues : parsedVariantValues)
+                : resolvedVariantMode === 'storage'
+                    ? parsedColorValues
+                    : [],
+            sizes: resolvedVariantMode === 'size' ? parsedVariantValues : [],
+            variantMode: resolvedVariantMode,
+            variantOptions,
             date: Date.now()
 
         })
@@ -94,7 +191,7 @@ export async function POST(request) {
         return NextResponse.json({ success: true, message: 'Upload successful', newProduct })
 
     } catch (error) {
-        NextResponse.json({ success: false, message: error.message })
+        return NextResponse.json({ success: false, message: error.message })
     }
     
 }
