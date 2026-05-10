@@ -31,6 +31,21 @@ export async function GET(request) {
         const page = Math.min(requestedPage, totalPages)
         const skip = (page - 1) * limit
 
+        if (totalOrders === 0) {
+            return NextResponse.json({
+                success: true,
+                orders: [],
+                pagination: {
+                    page,
+                    limit,
+                    totalOrders,
+                    totalPages,
+                    hasNextPage: false,
+                    hasPrevPage: false
+                }
+            })
+        }
+
         const orders = await Order.find({})
             .select("userId items amount amountInr originalTotalInr subTotalInr gstInr shippingInr discountInr paymentDiscountInr promoCode paymentMethod status statusTimeline estimatedDeliveryDate date shippedAt canceledAt refundRequestedAt refundCompletedAt deliveredAt stockRestored needsStockRestoration")
             .sort({ date: -1 })
@@ -38,10 +53,7 @@ export async function GET(request) {
             .limit(limit)
 
         for (const order of orders) {
-            const { changed } = syncOrderWithSystemTime(order)
-            if (changed) {
-                await order.save()
-            }
+            syncOrderWithSystemTime(order)
         }
 
         const plainOrders = await hydrateOrderSummaries(orders, "name image")

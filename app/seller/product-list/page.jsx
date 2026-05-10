@@ -7,7 +7,7 @@ import Footer from "@/components/seller/Footer";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { formatPrice } from "@/lib/currencyUtils";
-import { getProductPrimaryImage, normalizeProductImageUrl } from "@/lib/productDisplay";
+import { getProductAvailabilitySummary, getProductPrimaryImage, normalizeProductImageUrl } from "@/lib/productDisplay";
 import { getCategoryVariantConfig } from "@/lib/productVariantRules";
 
 const getVariantSummary = (product) => {
@@ -94,6 +94,7 @@ const ProductList = () => {
               <>
                 <div className="grid gap-4 md:hidden">
                   {products.map((product) => {
+                    const availability = getProductAvailabilitySummary(product);
                     const productImage = normalizeProductImageUrl(getProductPrimaryImage(product));
                     const variantLabel = getCategoryVariantConfig(product.category).label;
                     const variantSummary = getVariantSummary(product);
@@ -130,7 +131,7 @@ const ProductList = () => {
                           </div>
                           <div>
                             <p className="text-xs uppercase tracking-wide text-gray-400">Status</p>
-                            <p className="mt-1 capitalize">{product.status || (product.stock === 0 ? "out_of_stock" : "active")}</p>
+                            <p className="mt-1 capitalize">{availability.status}</p>
                           </div>
                         </div>
 
@@ -165,6 +166,7 @@ const ProductList = () => {
                     </thead>
                     <tbody className="text-sm text-gray-500">
                       {products.map((product) => {
+                        const availability = getProductAvailabilitySummary(product);
                         const productImage = normalizeProductImageUrl(getProductPrimaryImage(product));
                         const variantLabel = getCategoryVariantConfig(product.category).label;
                         const variantSummary = getVariantSummary(product);
@@ -191,7 +193,7 @@ const ProductList = () => {
                             </td>
                             <td className="px-4 py-3">{formatPrice(Math.round(product.offerPrice * 94), currency)}</td>
                             <td className="px-4 py-3">{product.stock ?? 0}</td>
-                            <td className="px-4 py-3 capitalize">{product.status || (product.stock === 0 ? "out_of_stock" : "active")}</td>
+                            <td className="px-4 py-3 capitalize">{availability.status}</td>
                             <td className="px-4 py-3 max-sm:hidden">
                               <button onClick={() => router.push(`/product/${product._id}`)} className="brand-button flex items-center gap-1 rounded-md px-1.5 py-2 md:px-3.5">
                                 <span className="hidden md:block">Visit</span>

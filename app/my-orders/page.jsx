@@ -204,7 +204,7 @@ const MyOrders = () => {
                         </p>
                     )}
 
-                    {loading ? <Loading /> : orders.length === 0 ? (
+                    {loading ? <Loading variant="orders" label="Loading your orders..." /> : orders.length === 0 ? (
                         <div className="brand-surface rounded-[1.5rem] p-8 text-center text-[var(--ink-500)]">
                             <p className="text-lg font-semibold text-[var(--ink-900)] mb-2">No orders found</p>
                             <p className="text-sm">Place a test order and it will appear here.</p>

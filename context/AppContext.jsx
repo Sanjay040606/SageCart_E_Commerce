@@ -3,7 +3,7 @@ import { convertUSDToINR } from "@/lib/currencyUtils";
 import { useAuth, useUser } from "@clerk/nextjs";
 import axios from "axios";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
     buildCartKey,
@@ -13,6 +13,7 @@ import {
 } from "@/lib/cartUtils";
 
 const PRODUCT_CACHE_KEY = "sagecart:products-cache:v1";
+const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 const readCachedProducts = () => {
     if (typeof window === "undefined") return [];
@@ -80,6 +81,9 @@ export const AppContextProvider = (props) => {
 
     const [chatMessages, setChatMessages] = useState(null)
     const [isChatOpen, setIsChatOpen] = useState(false)
+    const lastCatalogRefreshPathRef = useRef("")
+    const lastCatalogRefreshAtRef = useRef(0)
+    const [catalogRefreshPending, setCatalogRefreshPending] = useState(false)
 
     useEffect(() => {
         const cachedProducts = readCachedProducts();
@@ -90,14 +94,21 @@ export const AppContextProvider = (props) => {
     }, []);
 
     const shouldLoadProductCatalog =
-      currentPathname === "/" ||
       currentPathname.startsWith("/all-products") ||
       currentPathname.startsWith("/product") ||
       currentPathname.startsWith("/cart") ||
       currentPathname.startsWith("/wishlist");
-
-    const fetchProductData = useCallback(async ({ signal, bustCache = false, silent = false } = {}) => {
+    const fetchProductData = useCallback(async ({
+      signal,
+      bustCache = false,
+      silent = false,
+      markBackgroundRefresh = false
+    } = {}) => {
         try {
+            if (markBackgroundRefresh) {
+                setCatalogRefreshPending(true)
+            }
+
             const requestUrl = bustCache
                 ? `/api/product/list?ts=${Date.now()}`
                 : '/api/product/list';
@@ -106,6 +117,7 @@ export const AppContextProvider = (props) => {
             if (data.success) {
                 setProducts(data.products)
                 writeCachedProducts(data.products)
+                lastCatalogRefreshAtRef.current = Date.now()
             } else {
                 if (!silent) {
                     toast.error(data.message)
@@ -120,6 +132,9 @@ export const AppContextProvider = (props) => {
                 toast.error(error.message)
             }
         } finally {
+            if (markBackgroundRefresh) {
+                setCatalogRefreshPending(false)
+            }
             setProductsLoading(false)
         }
     }, [])
@@ -270,22 +285,34 @@ export const AppContextProvider = (props) => {
     useEffect(() => {
         if (!shouldLoadProductCatalog) {
             setProductsLoading(false)
+            setCatalogRefreshPending(false)
+            lastCatalogRefreshPathRef.current = ""
             return undefined
         }
 
         if (products.length > 0) {
             setProductsLoading(false)
+            const shouldRefresh =
+                currentPathname.startsWith("/all-products") &&
+                lastCatalogRefreshPathRef.current !== currentPathname &&
+                Date.now() - lastCatalogRefreshAtRef.current > CATALOG_REFRESH_INTERVAL_MS
+
+            if (shouldRefresh) {
+                lastCatalogRefreshPathRef.current = currentPathname
+                fetchProductData({ bustCache: true, silent: true, markBackgroundRefresh: true })
+            }
             return undefined
         }
 
         const controller = new AbortController()
         setProductsLoading(true)
-        fetchProductData({ signal: controller.signal })
+        lastCatalogRefreshPathRef.current = currentPathname
+        fetchProductData({ signal: controller.signal, bustCache: true })
 
         return () => {
             controller.abort()
         }
-    }, [fetchProductData, products.length, shouldLoadProductCatalog])
+    }, [currentPathname, fetchProductData, products.length, shouldLoadProductCatalog])
 
     useEffect(() => {
         if (user) {
@@ -304,7 +331,8 @@ export const AppContextProvider = (props) => {
         getCartCount, getCartAmount,
         chatMessages, setChatMessages,
         isChatOpen, setIsChatOpen,
-        wishlistItems, setWishlistItems, toggleWishlist
+        wishlistItems, setWishlistItems, toggleWishlist,
+        catalogRefreshPending
     }
 
     return (

@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useDeferredValue, useEffect, useMemo, useState } from "react";
 import ProductCard from "@/components/ProductCard";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -7,7 +7,7 @@ import Loading from "@/components/Loading";
 import { useAppContext } from "@/context/AppContext";
 import { useSearchParams } from "next/navigation";
 import { convertUSDToINR } from "@/lib/currencyUtils";
-import { getProductAverageRating } from "@/lib/productDisplay";
+import { getProductAvailabilitySummary, getProductAverageRating } from "@/lib/productDisplay";
 import { dedupeCatalogProducts } from "@/lib/productCatalog";
 import { buildProductSearchTokens, getPrimarySearchFamily, getProductSearchScore, matchesSearchTokens, normalizeSearchText, prepareSearchQuery } from "@/lib/productSearch";
 
@@ -305,7 +305,7 @@ const FilterDrawer = ({
 };
 
 const AllProductsContent = () => {
-  const { products, productsLoading } = useAppContext();
+  const { products, productsLoading, catalogRefreshPending } = useAppContext();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
   const initialUrlState = readAllProductsStateFromParams(searchParams);
@@ -318,7 +318,8 @@ const AllProductsContent = () => {
   const [sortBy, setSortBy] = useState(() => initialUrlState.sortBy);
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(() => initialUrlState.currentPage);
-  const liveSearchQuery = useMemo(() => prepareSearchQuery(searchQuery), [searchQuery]);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const liveSearchQuery = useMemo(() => prepareSearchQuery(deferredSearchQuery), [deferredSearchQuery]);
   const preparedSearchQuery = liveSearchQuery;
   const isSearchSettling = false;
 
@@ -356,6 +357,7 @@ const AllProductsContent = () => {
 
   const catalogIndex = useMemo(() => {
     return catalogProducts.map((product) => {
+      const availability = getProductAvailabilitySummary(product);
       const priceInr = convertUSDToINR(product.offerPrice);
       const averageRating = getProductAverageRating(product);
       const ratingValue = averageRating || 0;
@@ -375,8 +377,8 @@ const AllProductsContent = () => {
         slugText,
         priceInr,
         rating: ratingValue,
-        status: product.status,
-        stock: Number(product.stock || 0),
+        status: availability.status,
+        stock: availability.stock,
         discountPercent: Number(product.discountPercent || 0),
         dateValue: Number(product.date || 0)
       };
@@ -580,13 +582,13 @@ const AllProductsContent = () => {
     setCurrentPage(1);
   };
 
-  if (productsLoading) {
+  if (productsLoading && products.length === 0) {
     return (
       <>
         <Navbar />
         <main className="px-6 py-8 md:px-16 lg:px-32">
           <section className="rounded-[2rem] border border-[var(--line-soft)] bg-[var(--bg-panel)] p-5 shadow-sm md:p-8">
-            <Loading />
+            <Loading variant="catalog" label="Loading catalog..." />
           </section>
         </main>
         <Footer />
@@ -645,6 +647,11 @@ const AllProductsContent = () => {
             <span className="rounded-full border border-[var(--line-soft)] bg-white px-3 py-1">
               {activeFilterCount} active filters
             </span>
+            {catalogRefreshPending && products.length > 0 && (
+              <span className="rounded-full border border-[var(--line-soft)] bg-white px-3 py-1">
+                Updating catalog in the background...
+              </span>
+            )}
             {activeFilterCount > 0 && (
               <button
                 type="button"
@@ -758,7 +765,7 @@ const AllProductsContent = () => {
 };
 
 const AllProducts = () => (
-  <Suspense fallback={<Loading />}>
+  <Suspense fallback={<Loading variant="catalog" label="Loading catalog..." />}>
     <AllProductsContent />
   </Suspense>
 );

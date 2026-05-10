@@ -1,5 +1,5 @@
 import Loading from "@/components/Loading";
 
 export default function AllProductsLoading() {
-  return <Loading />;
+  return <Loading variant="catalog" label="Loading catalog..." />;
 }

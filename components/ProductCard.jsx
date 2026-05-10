@@ -5,7 +5,7 @@ import { assets } from '@/assets/assets'
 import Image from 'next/image';
 import { useAppContext } from '@/context/AppContext';
 import { convertUSDToINR, formatPrice } from '@/lib/currencyUtils';
-import { getProductAverageRating, getProductPrimaryImage, getProductReviewCount, normalizeProductImageUrl } from '@/lib/productDisplay';
+import { getProductAvailabilitySummary, getProductAverageRating, getProductPrimaryImage, getProductReviewCount, normalizeProductImageUrl } from '@/lib/productDisplay';
 
 const STAR_LEVELS = [0, 1, 2, 3, 4];
 
@@ -29,8 +29,10 @@ const ProductCard = memo(({ product }) => {
     const productImage = normalizeProductImageUrl(getProductPrimaryImage(product))
     const averageRating = getProductAverageRating(product)
     const reviewCount = getProductReviewCount(product)
-    const statusInfo = getStatusDisplay(product.status, product.stock)
-    const isAvailable = product.status === 'active' || product.status === 'low_stock'
+    const availability = getProductAvailabilitySummary(product)
+    const statusInfo = getStatusDisplay(availability.status, availability.stock)
+    const isAvailable = availability.status === 'active' || availability.status === 'low_stock'
+    const availabilityLabel = statusInfo?.text || (!isAvailable ? 'Unavailable' : '')
     const priceInr = convertUSDToINR(product.offerPrice)
 
     return (
@@ -46,6 +48,11 @@ const ProductCard = memo(({ product }) => {
                     width={800}
                     height={800}
                 />
+                {availabilityLabel && (
+                    <div className="absolute left-2 top-2 z-10 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-700)] shadow-sm backdrop-blur">
+                        {availabilityLabel}
+                    </div>
+                )}
                 <button 
                     onClick={(e) => { e.stopPropagation(); toggleWishlist(product._id); }}
                     className="absolute top-2 right-2 bg-white p-2 rounded-full shadow-md z-10 hover:scale-110 transition"
@@ -89,10 +96,14 @@ const ProductCard = memo(({ product }) => {
             <div className="flex items-end justify-between w-full mt-1">
                 <p className="text-base font-medium">{formatPrice(priceInr, currency)}</p>
                 <button
-                    className={`max-sm:hidden px-4 py-1.5 text-gray-500 border border-gray-500/20 rounded-full text-xs hover:bg-slate-50 transition ${!isAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`max-sm:hidden px-4 py-1.5 border rounded-full text-xs transition ${
+                        isAvailable
+                            ? 'text-gray-500 border-gray-500/20 hover:bg-slate-50'
+                            : 'cursor-not-allowed border-red-200 bg-red-50 text-red-600'
+                    }`}
                     disabled={!isAvailable}
                 >
-                    Buy now
+                    {isAvailable ? 'Buy now' : 'Unavailable'}
                 </button>
             </div>
         </div>

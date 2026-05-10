@@ -9,6 +9,7 @@ import { buildVariantOptionsFromValues, inferCategoryVariantMode, parseDelimited
 
 const MAX_PRODUCT_IMAGE_SIZE_MB = 5;
 const MAX_PRODUCT_IMAGE_SIZE_BYTES = MAX_PRODUCT_IMAGE_SIZE_MB * 1024 * 1024;
+const CLOUDINARY_PRODUCT_FOLDER = process.env.CLOUDINARY_PRODUCT_FOLDER?.trim() || "sagecart";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -134,7 +135,10 @@ export async function POST(request) {
 
                 return new Promise( (resolve , reject) => {
                     const stream = cloudinary.uploader.upload_stream(
-                        {resource_type: 'auto'},
+                        {
+                            resource_type: 'auto',
+                            folder: CLOUDINARY_PRODUCT_FOLDER
+                        },
                         (error , result) =>{
                             if (error) {
                                 reject(error)

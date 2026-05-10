@@ -9,8 +9,8 @@ const HomeProducts = ({ initialProducts = [] }) => {
   const { products, productsLoading, router } = useAppContext();
   const [showMore, setShowMore] = useState(false);
   const visibleProductCount = showMore ? CURATED_HOME_PRODUCT_NAMES.length : 15;
-  const sourceProducts = initialProducts.length > 0 ? initialProducts : products;
-  const sourceLoading = initialProducts.length > 0 ? false : productsLoading;
+  const sourceProducts = products.length > 0 ? products : initialProducts;
+  const sourceLoading = productsLoading && sourceProducts.length === 0;
   const featuredProducts = useMemo(
     () => getCuratedHomeProducts(sourceProducts, visibleProductCount),
     [sourceProducts, visibleProductCount]

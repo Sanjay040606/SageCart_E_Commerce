@@ -10,8 +10,8 @@ import { normalizeProductImageUrl } from "@/lib/productDisplay";
 
 const FeaturedProduct = ({ initialProducts = [] }) => {
   const { products, productsLoading } = useAppContext();
-  const sourceProducts = initialProducts.length > 0 ? initialProducts : products;
-  const sourceLoading = initialProducts.length > 0 ? false : productsLoading;
+  const sourceProducts = products.length > 0 ? products : initialProducts;
+  const sourceLoading = productsLoading && sourceProducts.length === 0;
   const highlightedProducts = useMemo(() => getCuratedHomeProducts(sourceProducts, 3), [sourceProducts]);
 
   if (sourceLoading && highlightedProducts.length === 0) {

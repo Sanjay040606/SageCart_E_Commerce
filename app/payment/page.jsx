@@ -1,5 +1,4 @@
 'use client'
-import { assets } from '@/assets/assets'
 import { useAppContext } from '@/context/AppContext'
 import axios from 'axios'
 import { useEffect, useState } from 'react'
@@ -11,7 +10,7 @@ const PaymentPage = () => {
 
   const { router, getToken, setCartItems } = useAppContext()
   const [paymentData, setPaymentData] = useState(null)
-  const [step, setStep] = useState('details') // 'details', 'pin', 'success'
+  const [step, setStep] = useState('details') // 'details', 'pin'
   const [loading, setLoading] = useState(false)
 
   const [upiId, setUpiId] = useState('')
@@ -167,11 +166,7 @@ const PaymentPage = () => {
         localStorage.removeItem('sagecart-payment-data')
 
         setCartItems({})
-        setStep('success')
-
-        setTimeout(() => {
-          router.push('/order-placed')
-        }, 3000)
+        router.push('/order-placed')
       } else {
         toast.error(data.message)
       }
@@ -348,24 +343,6 @@ const PaymentPage = () => {
                 </button>
               </div>
             </form>
-          )}
-
-          {step === 'success' && (
-            <div className='text-center space-y-4'>
-              <div className='flex justify-center mb-4'>
-                <div className='relative'>
-                  <div className='absolute inset-0 bg-green-200 rounded-full animate-pulse'></div>
-                  <div className='relative bg-green-500 text-white rounded-full w-20 h-20 flex items-center justify-center'>
-                    <svg className='w-10 h-10' fill='currentColor' viewBox='0 0 20 20'>
-                      <path fillRule='evenodd' d='M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z' />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-              <h2 className='text-2xl font-bold text-green-600'>Payment Successful!</h2>
-              <p className='text-gray-600'>Your order has been confirmed.</p>
-              <p className='text-sm text-gray-500'>Redirecting to order details...</p>
-            </div>
           )}
 
         </div>

@@ -17,6 +17,7 @@ import toast from "react-hot-toast";
 import {
   buildDatasetReviewCards,
   buildProductVariantOptions,
+  getProductAvailabilitySummary,
   getProductVariantGalleryEntries,
   getDatasetReviewHighlights,
   getProductAverageRating,
@@ -25,17 +26,10 @@ import {
   getVariantDisplayDescription,
   getVariantDisplayImage,
   getVariantDisplayPriceInr,
+  isVariantUnavailable,
   normalizeProductImageUrl
 } from "@/lib/productDisplay";
 import { dedupeCatalogProducts } from "@/lib/productCatalog";
-
-const isVariantUnavailable = (option) =>
-  Boolean(
-    option &&
-      (option.outOfStock ||
-        option.available === false ||
-        (Number.isFinite(Number(option.stock)) && Number(option.stock) <= 0))
-  );
 
 const RELATED_PRODUCTS_PER_PAGE = 6;
 
@@ -159,13 +153,14 @@ const Product = () => {
   const reviewHighlights = getDatasetReviewHighlights(productData || {});
   const averageRating = getProductAverageRating(productData || {});
   const reviewCount = getProductReviewCount(productData || {});
+  const availability = getProductAvailabilitySummary(productData || {});
   const selectedVariantUnavailable = isVariantUnavailable(selectedVariant);
   const statusInfo = productData
-    ? getStatusDisplay(selectedVariantUnavailable ? "out_of_stock" : productData.status, selectedVariantUnavailable ? 0 : productData.stock)
+    ? getStatusDisplay(selectedVariantUnavailable ? "out_of_stock" : availability.status, selectedVariantUnavailable ? 0 : availability.stock)
     : null;
   const isAvailable = Boolean(
     productData &&
-      (productData.status === "active" || productData.status === "low_stock") &&
+      (availability.status === "active" || availability.status === "low_stock") &&
       !selectedVariantUnavailable
   );
   const baseOfferPriceInr = productData ? convertUSDToINR(productData.offerPrice) : 0;

@@ -1,7 +1,19 @@
 import connectDB from "@/config/db";
 import Product from "@/models/Product";
-import { getProductStatusFromStock } from "@/lib/productStock";
+import { buildStockUpdateOperations } from "@/lib/stockSeeder";
 import { NextResponse } from "next/server";
+
+const BATCH_SIZE = 500;
+
+const chunkArray = (items, size) => {
+  const chunks = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+};
 
 /**
  * POST /api/admin/seed-stock
@@ -23,7 +35,7 @@ export async function POST(request) {
     }
 
     await connectDB();
-    const products = await Product.find({});
+    const products = await Product.find({}).lean();
 
     if (products.length === 0) {
       return NextResponse.json({
@@ -32,52 +44,35 @@ export async function POST(request) {
       });
     }
 
-    const results = [];
-    let updated = 0;
+    const { operations, preview, summary } = buildStockUpdateOperations(products, {
+      highStockValue: 500,
+      lowStockRange: [1, 5]
+    });
 
-    // Assign stock in pattern: 10 -> 5 -> 0 -> 10 -> 5 -> 0 ...
-    for (let i = 0; i < products.length; i++) {
-      const pattern = i % 3;
-      let stockValue;
+    const bulkSummary = {
+      matchedCount: 0,
+      modifiedCount: 0,
+      upsertedCount: 0
+    };
 
-      if (pattern === 0) {
-        stockValue = 10;
-      } else if (pattern === 1) {
-        stockValue = 5;
-      } else {
-        stockValue = 0;
-      }
+    for (const batch of chunkArray(operations, BATCH_SIZE)) {
+      if (batch.length === 0) continue;
 
-      const newStatus = getProductStatusFromStock(stockValue);
-
-      // Only update if stock is 0 (default/unset)
-      if (products[i].stock === 0 || products[i].stock == null) {
-        products[i].stock = stockValue;
-        products[i].status = newStatus;
-        await products[i].save();
-        updated++;
-
-        results.push({
-          id: products[i]._id,
-          name: products[i].name,
-          stock: stockValue,
-          status: newStatus
-        });
-      }
+      const result = await Product.bulkWrite(batch, { ordered: false });
+      bulkSummary.matchedCount += result.matchedCount || 0;
+      bulkSummary.modifiedCount += result.modifiedCount || 0;
+      bulkSummary.upsertedCount += result.upsertedCount || 0;
     }
 
     return NextResponse.json({
       success: true,
-      message: `Seeded stock for ${updated} products`,
-      updated: results,
+      message: `Seeded stock for ${operations.length} products`,
+      updated: preview,
       summary: {
-        total: products.length,
-        updated: updated,
-        distribution: {
-          stock_10: Math.ceil(products.length / 3),
-          stock_5: Math.floor(products.length / 3),
-          stock_0: Math.floor(products.length / 3)
-        }
+        ...summary,
+        matched: bulkSummary.matchedCount,
+        modified: bulkSummary.modifiedCount,
+        upserted: bulkSummary.upsertedCount
       }
     });
   } catch (error) {
