@@ -160,9 +160,9 @@ const Navbar = () => {
           <Image
             src={assets.logo}
             alt="SageCart Logo"
-            width={150}
-            height={40}
-            className="w-[120px] object-contain sm:w-[132px] md:w-[150px]"
+            width={184}
+            height={44}
+            className="w-[128px] object-contain sm:w-[152px] md:w-[172px] lg:w-[184px]"
             priority
           />
         </button>

@@ -6,7 +6,7 @@ import { ORDER_STATUSES, getOrderMilestones, syncOrderWithSystemTime } from "@/l
 import { sendOrderLifecycleEmailsIfNeeded, sendWelcomeEmailIfNeeded } from "@/lib/emailNotifications";
 
 // Create a client to send and receive events
-export const inngest = new Inngest({ id: "sagecart-next" });
+export const inngest = new Inngest({ id: "sagecart-ecommerce" });
 
 // inngest Function to save  user data to a database
 export const syncUserCreation = inngest.createFunction(

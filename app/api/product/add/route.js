@@ -7,6 +7,9 @@ import { getProductStatusFromStock } from "@/lib/productStock";
 import { NextResponse } from "next/server";
 import { buildVariantOptionsFromValues, inferCategoryVariantMode, parseDelimitedValues } from "@/lib/productVariantRules";
 
+const MAX_PRODUCT_IMAGE_SIZE_MB = 5;
+const MAX_PRODUCT_IMAGE_SIZE_BYTES = MAX_PRODUCT_IMAGE_SIZE_MB * 1024 * 1024;
+
 // Configure Cloudinary
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -114,6 +117,14 @@ export async function POST(request) {
 
         if (!files || files.length === 0) {
             return NextResponse.json({ success: false, message: 'no files uploaded'})
+        }
+
+        const oversizedFile = files.find((file) => typeof file?.size === 'number' && file.size > MAX_PRODUCT_IMAGE_SIZE_BYTES);
+        if (oversizedFile) {
+            return NextResponse.json({
+                success: false,
+                message: `Each product image must be ${MAX_PRODUCT_IMAGE_SIZE_MB} MB or smaller.`
+            });
         }
 
         const result = await Promise.all(

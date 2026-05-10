@@ -885,17 +885,49 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="group fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-[var(--line-soft)] bg-[linear-gradient(135deg,#48624a_0%,#657f67_100%)] text-white shadow-[0_20px_40px_rgba(44,58,46,0.28)] transition hover:scale-[1.03] sm:bottom-6 sm:right-6 sm:h-16 sm:w-16"
+        className="group fixed bottom-4 right-4 z-50 flex h-[5rem] w-[5rem] items-center justify-center overflow-hidden rounded-full border border-[var(--line-soft)] bg-[linear-gradient(135deg,#48624a_0%,#657f67_100%)] text-white shadow-[0_20px_40px_rgba(44,58,46,0.28)] transition hover:scale-[1.03] sm:bottom-6 sm:right-6 sm:h-[5.25rem] sm:w-[5.25rem]"
         title="Open Sage Support"
         aria-label="Open Sage Support"
       >
-        <Image
-          src={assets.logo}
-          alt="SageCart"
-          width={32}
-          height={32}
-          className="h-8 w-8 object-contain sm:h-9 sm:w-9"
-        />
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-[0_12px_24px_rgba(0,0,0,0.2)] ring-2 ring-[rgba(199,167,106,0.26)] sm:h-16 sm:w-16">
+          <svg
+            viewBox="0 0 64 64"
+            aria-hidden="true"
+            className="h-12 w-12 drop-shadow-[0_2px_6px_rgba(0,0,0,0.18)] sm:h-14 sm:w-14"
+          >
+            <defs>
+              <linearGradient id="chatbotFaviconBg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#1B2520" />
+                <stop offset="1" stopColor="#2A372F" />
+              </linearGradient>
+              <linearGradient id="chatbotFaviconGold" x1="18" y1="14" x2="42" y2="46" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#F7ECD0" />
+                <stop offset="0.5" stopColor="#D7BC84" />
+                <stop offset="1" stopColor="#A88442" />
+              </linearGradient>
+            </defs>
+            <circle cx="32" cy="32" r="26" fill="url(#chatbotFaviconBg)" stroke="#C7A76A" strokeWidth="1.5" />
+            <circle cx="32" cy="32" r="21" fill="none" stroke="#F7ECD0" strokeOpacity="0.16" strokeWidth="1.2" />
+            <text
+              x="18.5"
+              y="39"
+              fill="url(#chatbotFaviconGold)"
+              fontFamily="Georgia, 'Times New Roman', serif"
+              fontSize="28"
+              fontWeight="700"
+              letterSpacing="-0.04em"
+            >
+              S
+            </text>
+            <path
+              d="M24 42.3H40"
+              stroke="#F7ECD0"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              opacity="0.66"
+            />
+          </svg>
+        </span>
       </button>
     )
   }
@@ -909,8 +941,8 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
       <div className="border-b border-[var(--line-soft)] bg-[linear-gradient(135deg,#f8f4ec_0%,#e7ede2_100%)] px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm">
-              <Image src={assets.logo} alt="SageCart" width={36} height={36} className="h-9 w-9 object-contain" />
+            <div className="flex h-11 w-fit items-center justify-start overflow-hidden rounded-[1rem] bg-white px-2 shadow-sm ring-1 ring-[rgba(199,167,106,0.16)]">
+              <Image src={assets.logo} alt="SageCart" width={244} height={44} className="h-6 w-auto object-contain sm:h-7" />
             </div>
             <div>
               <div className="flex items-center gap-2">

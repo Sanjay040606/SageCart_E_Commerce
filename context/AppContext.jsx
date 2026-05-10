@@ -38,6 +38,23 @@ const writeCachedProducts = (products = []) => {
     }
 };
 
+const normalizeCurrencySymbol = (value) => {
+    const rawValue = String(value ?? "").trim();
+    if (!rawValue) return "₹";
+
+    const compactValue = rawValue.replace(/\s+/g, "");
+    if (
+        compactValue === "₹" ||
+        compactValue === "â‚¹" ||
+        compactValue === "Ã¢â€šÂ¹" ||
+        /^(rs\.?|inr|rupees?)$/i.test(compactValue)
+    ) {
+        return "₹";
+    }
+
+    return rawValue;
+};
+
 export const AppContext = createContext();
 
 export const useAppContext = () => {
@@ -46,7 +63,7 @@ export const useAppContext = () => {
 
 export const AppContextProvider = (props) => {
 
-    const currency = process.env.NEXT_PUBLIC_CURRENCY
+    const currency = normalizeCurrencySymbol(process.env.NEXT_PUBLIC_CURRENCY)
     const router = useRouter()
     const pathname = usePathname()
     const currentPathname = pathname || ""

@@ -5,6 +5,11 @@ import AppProviders from "@/components/app-providers";
 export const metadata = {
   title: "SageCart",
   description: "A calm, modern storefront for curated everyday shopping.",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({ children }) {

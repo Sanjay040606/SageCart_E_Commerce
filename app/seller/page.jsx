@@ -8,6 +8,9 @@ import toast from "react-hot-toast";
 import { convertINRToUSD } from "@/lib/currencyUtils";
 import { getCategoryVariantConfig, inferCategoryVariantMode, parseDelimitedValues } from "@/lib/productVariantRules";
 
+const MAX_PRODUCT_IMAGE_SIZE_MB = 5;
+const MAX_PRODUCT_IMAGE_SIZE_BYTES = MAX_PRODUCT_IMAGE_SIZE_MB * 1024 * 1024;
+
 const AddProduct = () => {
   const { getToken, fetchProductData } = useAppContext()
 
@@ -68,6 +71,21 @@ const AddProduct = () => {
   ]), []);
 
   const variantConfig = useMemo(() => getCategoryVariantConfig(category), [category]);
+
+  const handleProductImageChange = (index, file) => {
+    if (!file) return;
+
+    if (file.size > MAX_PRODUCT_IMAGE_SIZE_BYTES) {
+      toast.error(`Each product image must be ${MAX_PRODUCT_IMAGE_SIZE_MB} MB or smaller.`);
+      return;
+    }
+
+    setFiles((currentFiles) => {
+      const updatedFiles = [...currentFiles];
+      updatedFiles[index] = file;
+      return updatedFiles;
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -136,10 +154,10 @@ const AddProduct = () => {
               <label key={index} htmlFor={`image${index}`} className="block">
                 <input
                   onChange={(e) => {
-                    const updatedFiles = [...files];
-                    updatedFiles[index] = e.target.files[0];
-                    setFiles(updatedFiles);
+                    handleProductImageChange(index, e.target.files?.[0]);
+                    e.target.value = "";
                   }}
+                  accept="image/*"
                   type="file"
                   id={`image${index}`}
                   hidden
@@ -154,6 +172,9 @@ const AddProduct = () => {
               </label>
             ))}
           </div>
+          <p className="text-xs text-gray-500">
+            Each image must be {MAX_PRODUCT_IMAGE_SIZE_MB} MB or smaller to keep uploads fast and storage use low.
+          </p>
         </div>
 
         <div className="flex flex-col gap-1 w-full max-w-none">
@@ -208,7 +229,7 @@ const AddProduct = () => {
 
           <div className="flex flex-col gap-1 w-full min-w-0">
             <label className="text-base font-medium" htmlFor="product-price">
-              Product Price (â‚¹)
+              Product Price (₹)
             </label>
             <input
               id="product-price"
@@ -223,7 +244,7 @@ const AddProduct = () => {
 
           <div className="flex flex-col gap-1 w-full min-w-0">
             <label className="text-base font-medium" htmlFor="offer-price">
-              Offer Price (â‚¹)
+              Offer Price (₹)
             </label>
             <input
               id="offer-price"
