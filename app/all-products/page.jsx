@@ -59,6 +59,16 @@ const parsePageParam = (value) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 };
 
+const readAllProductsStateFromParams = (searchParams) => ({
+  searchQuery: searchParams.get(ALL_PRODUCTS_URL_KEYS.search) || "",
+  activeCategory: searchParams.get(ALL_PRODUCTS_URL_KEYS.category) || "all",
+  stockFilter: searchParams.get(ALL_PRODUCTS_URL_KEYS.stock) || "all",
+  ratingFilter: searchParams.get(ALL_PRODUCTS_URL_KEYS.rating) || "all",
+  priceBand: searchParams.get(ALL_PRODUCTS_URL_KEYS.price) || "all",
+  sortBy: searchParams.get(ALL_PRODUCTS_URL_KEYS.sort) || "featured",
+  currentPage: parsePageParam(searchParams.get(ALL_PRODUCTS_URL_KEYS.page))
+});
+
 const syncAllProductsUrl = ({
   searchQuery,
   currentPage,
@@ -297,18 +307,32 @@ const FilterDrawer = ({
 const AllProductsContent = () => {
   const { products, productsLoading } = useAppContext();
   const searchParams = useSearchParams();
+  const searchParamsString = searchParams.toString();
+  const initialUrlState = readAllProductsStateFromParams(searchParams);
 
-  const [searchQuery, setSearchQuery] = useState(() => searchParams.get(ALL_PRODUCTS_URL_KEYS.search) || "");
-  const [activeCategory, setActiveCategory] = useState(() => searchParams.get(ALL_PRODUCTS_URL_KEYS.category) || "all");
-  const [stockFilter, setStockFilter] = useState(() => searchParams.get(ALL_PRODUCTS_URL_KEYS.stock) || "all");
-  const [ratingFilter, setRatingFilter] = useState(() => searchParams.get(ALL_PRODUCTS_URL_KEYS.rating) || "all");
-  const [priceBand, setPriceBand] = useState(() => searchParams.get(ALL_PRODUCTS_URL_KEYS.price) || "all");
-  const [sortBy, setSortBy] = useState(() => searchParams.get(ALL_PRODUCTS_URL_KEYS.sort) || "featured");
+  const [searchQuery, setSearchQuery] = useState(() => initialUrlState.searchQuery);
+  const [activeCategory, setActiveCategory] = useState(() => initialUrlState.activeCategory);
+  const [stockFilter, setStockFilter] = useState(() => initialUrlState.stockFilter);
+  const [ratingFilter, setRatingFilter] = useState(() => initialUrlState.ratingFilter);
+  const [priceBand, setPriceBand] = useState(() => initialUrlState.priceBand);
+  const [sortBy, setSortBy] = useState(() => initialUrlState.sortBy);
   const [showFilters, setShowFilters] = useState(false);
-  const [currentPage, setCurrentPage] = useState(() => parsePageParam(searchParams.get(ALL_PRODUCTS_URL_KEYS.page)));
+  const [currentPage, setCurrentPage] = useState(() => initialUrlState.currentPage);
   const liveSearchQuery = useMemo(() => prepareSearchQuery(searchQuery), [searchQuery]);
   const preparedSearchQuery = liveSearchQuery;
   const isSearchSettling = false;
+
+  useEffect(() => {
+    const nextUrlState = readAllProductsStateFromParams(new URLSearchParams(searchParamsString));
+
+    setSearchQuery(nextUrlState.searchQuery);
+    setActiveCategory(nextUrlState.activeCategory);
+    setStockFilter(nextUrlState.stockFilter);
+    setRatingFilter(nextUrlState.ratingFilter);
+    setPriceBand(nextUrlState.priceBand);
+    setSortBy(nextUrlState.sortBy);
+    setCurrentPage(nextUrlState.currentPage);
+  }, [searchParamsString]);
 
   useEffect(() => {
     if (!showFilters) return undefined;
@@ -733,14 +757,10 @@ const AllProductsContent = () => {
   );
 };
 
-const AllProducts = () => {
-  const searchParams = useSearchParams();
-
-  return (
-    <Suspense fallback={<Loading />}>
-      <AllProductsContent key={searchParams.toString()} />
-    </Suspense>
-  );
-};
+const AllProducts = () => (
+  <Suspense fallback={<Loading />}>
+    <AllProductsContent />
+  </Suspense>
+);
 
 export default AllProducts;

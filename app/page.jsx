@@ -13,6 +13,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Chatbot from "@/components/Chatbot";
 import SupportFeedbackBox from "@/components/SupportFeedbackBox";
+import { isDatabaseConnectionError } from "@/lib/errorHandler";
 
 export const revalidate = 30;
 
@@ -37,7 +38,9 @@ const getHomePreviewProducts = async () => {
 
     return serializeCatalogProducts(products.filter(isCatalogProductVisible));
   } catch (error) {
-    console.error("Home catalog preload failed:", error.message);
+    if (!isDatabaseConnectionError(error)) {
+      console.error("Home catalog preload failed:", error.message);
+    }
     return [];
   }
 };
