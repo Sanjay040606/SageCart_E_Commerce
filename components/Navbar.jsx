@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { assets, BagIcon, BoxIcon, CartIcon, HomeIcon } from "@/assets/assets";
 import Link from "next/link";
 import { useAppContext } from "@/context/AppContext";
@@ -31,36 +31,90 @@ const userButtonAppearance = {
 
 const Navbar = () => {
   const { isSeller, router, user, currency } = useAppContext();
-  const { openSignIn } = useClerk();
+  const { openSignIn, loaded: clerkLoaded } = useClerk();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [pendingSignIn, setPendingSignIn] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchRequestIdRef = useRef(0);
+  const trimmedSearchQuery = searchQuery.trim();
+  const hasSearchResults = suggestions.length > 0;
 
   useEffect(() => {
+    searchRequestIdRef.current += 1;
+    const requestId = searchRequestIdRef.current;
+
     const fetchSuggestions = async () => {
-      if (searchQuery.trim().length === 0) {
+      const query = searchQuery.trim();
+
+      if (query.length < 2) {
         setSuggestions([]);
         setShowSuggestions(false);
+        setIsSearching(false);
         return;
       }
 
+      setIsSearching(true);
+
       try {
-        const { data } = await axios.get(`/api/product/search?q=${encodeURIComponent(searchQuery)}`);
+        const { data } = await axios.get(`/api/product/search?q=${encodeURIComponent(query)}`);
+        if (requestId !== searchRequestIdRef.current) {
+          return;
+        }
+
         if (data.success) {
           setSuggestions(data.products);
           setShowSuggestions(true);
+        } else {
+          setSuggestions([]);
+          setShowSuggestions(true);
         }
       } catch (error) {
+        if (requestId !== searchRequestIdRef.current) {
+          return;
+        }
+
         console.error("Search error:", error);
         setSuggestions([]);
+        setShowSuggestions(true);
+      } finally {
+        if (requestId === searchRequestIdRef.current) {
+          setIsSearching(false);
+        }
       }
     };
 
-    const timer = setTimeout(fetchSuggestions, 300);
+    const timer = setTimeout(fetchSuggestions, 200);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  const handleSearchInputChange = (value) => {
+    setSearchQuery(value);
+
+    const query = value.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setIsSearching(false);
+      return;
+    }
+
+    setSuggestions([]);
+    setShowSuggestions(true);
+    setIsSearching(true);
+  };
+
+  useEffect(() => {
+    if (!clerkLoaded || !pendingSignIn) {
+      return;
+    }
+
+    setPendingSignIn(false);
+    openSignIn();
+  }, [clerkLoaded, openSignIn, pendingSignIn]);
 
   const handleSearch = (e) => {
     if (e.key === "Enter" && searchQuery.trim()) {
@@ -139,14 +193,14 @@ const Navbar = () => {
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => handleSearchInputChange(e.target.value)}
                     onKeyPress={handleSearch}
                     onBlur={() => setTimeout(() => {
                       setShowSearch(false);
                       setShowSuggestions(false);
                     }, 200)}
-                    onFocus={() => searchQuery && setShowSuggestions(true)}
-                    placeholder="Search softly curated finds..."
+                    onFocus={() => searchQuery.trim().length >= 2 && setShowSuggestions(true)}
+                    placeholder="Search by name, brand, or category..."
                     autoFocus
                     className="min-w-0 flex-1 rounded-full border border-[var(--line-soft)] bg-white/80 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                   />
@@ -162,7 +216,14 @@ const Navbar = () => {
                   </button>
                 </div>
 
-                {showSuggestions && suggestions.length > 0 && (
+                {showSuggestions && isSearching && trimmedSearchQuery.length >= 2 && (
+                  <div className="mt-3 rounded-2xl border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-5 text-center">
+                    <p className="text-sm font-semibold text-[var(--ink-900)]">Searching...</p>
+                    <p className="mt-1 text-xs text-[var(--ink-500)]">Finding the closest product matches.</p>
+                  </div>
+                )}
+
+                {showSuggestions && !isSearching && suggestions.length > 0 && (
                   <div className="mt-3 max-h-64 overflow-y-auto rounded-2xl border border-[var(--line-soft)] bg-white">
                     {suggestions.map((product) => {
                       const productImage = normalizeProductImageUrl(getProductPrimaryImage(product));
@@ -189,6 +250,13 @@ const Navbar = () => {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {showSuggestions && !isSearching && trimmedSearchQuery.length >= 2 && !hasSearchResults && (
+                  <div className="mt-3 rounded-2xl border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-5 text-center">
+                    <p className="text-sm font-semibold text-[var(--ink-900)]">No products found</p>
+                    <p className="mt-1 text-xs text-[var(--ink-500)]">Try a different name, brand, or category.</p>
                   </div>
                 )}
               </div>
@@ -220,11 +288,17 @@ const Navbar = () => {
             </UserButton>
           ) : (
             <button
-              onClick={openSignIn}
+              onClick={() => {
+                if (!clerkLoaded) {
+                  setPendingSignIn(true);
+                  return;
+                }
+                openSignIn();
+              }}
               className="flex shrink-0 items-center gap-2 rounded-full border border-[var(--line-soft)] bg-white/80 px-3 py-2 transition hover:bg-[var(--accent-tint)] sm:px-4"
             >
               <Image src={assets.user_icon} alt="user icon" />
-              <span className="hidden sm:inline">Account</span>
+              <span className="hidden sm:inline">{clerkLoaded ? "Account" : pendingSignIn ? "Loading..." : "Account"}</span>
             </button>
           )}
         </div>
@@ -261,15 +335,22 @@ const Navbar = () => {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchInputChange(e.target.value)}
                 onKeyDown={handleSearch}
-                onFocus={() => searchQuery && setShowSuggestions(true)}
-                placeholder="Search products..."
+                onFocus={() => searchQuery.trim().length >= 2 && setShowSuggestions(true)}
+                placeholder="Search by name, brand, or category..."
                 autoFocus
                 className="w-full rounded-full border border-[var(--line-soft)] bg-white px-4 py-3 text-sm outline-none"
               />
             </div>
-            {showSuggestions && suggestions.length > 0 && (
+            {showSuggestions && isSearching && trimmedSearchQuery.length >= 2 && (
+              <div className="mt-3 rounded-[1.25rem] border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-5 text-center">
+                <p className="text-sm font-semibold text-[var(--ink-900)]">Searching...</p>
+                <p className="mt-1 text-xs text-[var(--ink-500)]">Finding the closest product matches.</p>
+              </div>
+            )}
+
+            {showSuggestions && !isSearching && suggestions.length > 0 && (
               <div className="mt-3 max-h-[calc(100dvh-15rem)] overflow-y-auto rounded-[1.25rem] border border-[var(--line-soft)] bg-white">
                 {suggestions.map((product) => {
                   const productImage = normalizeProductImageUrl(getProductPrimaryImage(product));
@@ -293,6 +374,13 @@ const Navbar = () => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {showSuggestions && !isSearching && trimmedSearchQuery.length >= 2 && !hasSearchResults && (
+              <div className="mt-3 rounded-[1.25rem] border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-5 text-center">
+                <p className="text-sm font-semibold text-[var(--ink-900)]">No products found</p>
+                <p className="mt-1 text-xs text-[var(--ink-500)]">Try a different name, brand, or category.</p>
               </div>
             )}
           </div>

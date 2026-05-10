@@ -12,6 +12,32 @@ import {
     parseCartKey
 } from "@/lib/cartUtils";
 
+const PRODUCT_CACHE_KEY = "sagecart:products-cache:v1";
+
+const readCachedProducts = () => {
+    if (typeof window === "undefined") return [];
+
+    try {
+        const cached = window.localStorage.getItem(PRODUCT_CACHE_KEY);
+        if (!cached) return [];
+
+        const parsed = JSON.parse(cached);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+};
+
+const writeCachedProducts = (products = []) => {
+    if (typeof window === "undefined") return;
+
+    try {
+        window.localStorage.setItem(PRODUCT_CACHE_KEY, JSON.stringify(products));
+    } catch {
+        // Ignore storage quota or privacy mode errors.
+    }
+};
+
 export const AppContext = createContext();
 
 export const useAppContext = () => {
@@ -38,6 +64,14 @@ export const AppContextProvider = (props) => {
     const [chatMessages, setChatMessages] = useState(null)
     const [isChatOpen, setIsChatOpen] = useState(false)
 
+    useEffect(() => {
+        const cachedProducts = readCachedProducts();
+        if (cachedProducts.length > 0) {
+            setProducts(cachedProducts);
+            setProductsLoading(false);
+        }
+    }, []);
+
     const shouldLoadProductCatalog =
       currentPathname === "/" ||
       currentPathname.startsWith("/all-products") ||
@@ -45,21 +79,29 @@ export const AppContextProvider = (props) => {
       currentPathname.startsWith("/cart") ||
       currentPathname.startsWith("/wishlist");
 
-    const fetchProductData = useCallback(async ({ signal } = {}) => {
+    const fetchProductData = useCallback(async ({ signal, bustCache = false, silent = false } = {}) => {
         try {
-            const { data } = await axios.get('/api/product/list', { signal })
+            const requestUrl = bustCache
+                ? `/api/product/list?ts=${Date.now()}`
+                : '/api/product/list';
+            const { data } = await axios.get(requestUrl, { signal })
 
             if (data.success) {
                 setProducts(data.products)
+                writeCachedProducts(data.products)
             } else {
-                toast.error(data.message)
+                if (!silent) {
+                    toast.error(data.message)
+                }
             }
         } catch (error) {
             if (error?.code === "ERR_CANCELED" || error?.name === "CanceledError") {
                 return;
             }
 
-            toast.error(error.message)
+            if (!silent) {
+                toast.error(error.message)
+            }
         } finally {
             setProductsLoading(false)
         }
@@ -185,6 +227,11 @@ export const AppContextProvider = (props) => {
     }
 
     const toggleWishlist = async (productId) => {
+        if (!user) {
+            toast.error("Please login to use wishlist");
+            return;
+        }
+
         let currentWishlist = [...wishlistItems];
         if (currentWishlist.includes(productId)) {
             currentWishlist = currentWishlist.filter(id => id !== productId);
@@ -195,17 +242,11 @@ export const AppContextProvider = (props) => {
         }
         setWishlistItems(currentWishlist);
 
-        if (user) {
-            try {
-                const token = await getToken()
-                await axios.post('/api/user/wishlist/update', { productId }, { headers: { Authorization: `Bearer ${token}` } })
-            } catch (error) {
-                toast.error(error.message)
-            }
-        } else {
-            toast.error("Please login to use wishlist");
-            // revert if not logged in
-            setWishlistItems(wishlistItems);
+        try {
+            const token = await getToken()
+            await axios.post('/api/user/wishlist/update', { productId }, { headers: { Authorization: `Bearer ${token}` } })
+        } catch (error) {
+            toast.error(error.message)
         }
     }
 

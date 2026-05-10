@@ -1,6 +1,7 @@
 import connectDB from "@/config/db";
 import authSeller from "@/lib/authSeller";
 import Order from "@/models/Order";
+import User from "@/models/User";
 import { hydrateOrderSummaries } from "@/lib/orderHydration";
 import { syncOrderWithSystemTime } from "@/lib/orderLifecycle";
 import { getAuth } from "@clerk/nextjs/server";
@@ -44,10 +45,25 @@ export async function GET(request) {
         }
 
         const plainOrders = await hydrateOrderSummaries(orders, "name image")
+        const buyerIds = Array.from(
+            new Set(
+                plainOrders
+                    .map((order) => String(order.userId || "").trim())
+                    .filter(Boolean)
+            )
+        )
+        const buyers = buyerIds.length > 0
+            ? await User.find({ _id: { $in: buyerIds } }).select("name email imageUrl").lean()
+            : []
+        const buyerMap = new Map(buyers.map((buyer) => [String(buyer._id), buyer]))
+        const ordersWithBuyers = plainOrders.map((order) => ({
+            ...order,
+            buyer: buyerMap.get(String(order.userId)) || null
+        }))
 
         return NextResponse.json({
             success: true,
-            orders: plainOrders,
+            orders: ordersWithBuyers,
             pagination: {
                 page,
                 limit,

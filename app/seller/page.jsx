@@ -9,7 +9,7 @@ import { convertINRToUSD } from "@/lib/currencyUtils";
 import { getCategoryVariantConfig, inferCategoryVariantMode, parseDelimitedValues } from "@/lib/productVariantRules";
 
 const AddProduct = () => {
-  const { getToken } = useAppContext()
+  const { getToken, fetchProductData } = useAppContext()
 
   const [files, setFiles] = useState([]);
   const [name, setName] = useState('');
@@ -103,6 +103,7 @@ const AddProduct = () => {
 
       if (data.success) {
         toast.success(data.message)
+        await fetchProductData({ bustCache: true, silent: true });
         setFiles([]);
         setName('');
         setDescription('');

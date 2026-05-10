@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from "react";
 import toast from 'react-hot-toast';
 import { GAME_PROMO_CODES } from "@/lib/promoCodes";

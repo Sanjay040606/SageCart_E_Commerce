@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useMemo } from "react";
 import { assets } from "@/assets/assets";
 import Link from "next/link";
@@ -6,9 +8,35 @@ import { useAppContext } from "@/context/AppContext";
 import { getCuratedHomeProducts } from "@/lib/productCatalog";
 import { normalizeProductImageUrl } from "@/lib/productDisplay";
 
-const FeaturedProduct = () => {
-  const { products } = useAppContext();
-  const highlightedProducts = useMemo(() => getCuratedHomeProducts(products, 3), [products]);
+const FeaturedProduct = ({ initialProducts = [] }) => {
+  const { products, productsLoading } = useAppContext();
+  const sourceProducts = initialProducts.length > 0 ? initialProducts : products;
+  const sourceLoading = initialProducts.length > 0 ? false : productsLoading;
+  const highlightedProducts = useMemo(() => getCuratedHomeProducts(sourceProducts, 3), [sourceProducts]);
+
+  if (sourceLoading && highlightedProducts.length === 0) {
+    return (
+      <div className="mt-14">
+        <div className="flex flex-col items-center">
+          <p className="text-3xl font-medium">Featured Products</p>
+          <div className="w-28 h-0.5 bg-[var(--accent)] mt-2"></div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-14 mt-12 md:px-14 px-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="overflow-hidden rounded-[2rem] border border-[var(--line-soft)] bg-white/70 shadow-sm">
+              <div className="h-[420px] bg-[var(--bg-soft)] animate-pulse" />
+              <div className="space-y-3 p-6">
+                <div className="h-5 w-3/4 rounded-full bg-[var(--bg-soft)] animate-pulse" />
+                <div className="h-4 w-full rounded-full bg-[var(--bg-soft)] animate-pulse" />
+                <div className="h-4 w-2/3 rounded-full bg-[var(--bg-soft)] animate-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (highlightedProducts.length === 0) {
     return null;

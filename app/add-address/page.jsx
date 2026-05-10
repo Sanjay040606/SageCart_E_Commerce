@@ -11,6 +11,8 @@ import toast from "react-hot-toast";
 
 const AddressMap = dynamic(() => import("@/components/AddressMap"), { ssr: false });
 
+const keepDigits = (value, maxLength) => String(value ?? "").replace(/\D/g, "").slice(0, maxLength);
+
 const AddAddress = () => {
 
     const { getToken, router } = useAppContext()
@@ -32,12 +34,34 @@ const AddAddress = () => {
         toast.success("Location details fetched!")
     }
 
+    const handlePhoneChange = (value) => {
+        setAddress((prev) => ({
+            ...prev,
+            phoneNumber: keepDigits(value, 10)
+        }))
+    }
+
+    const handlePincodeChange = (value) => {
+        setAddress((prev) => ({
+            ...prev,
+            pincode: keepDigits(value, 6)
+        }))
+    }
+
     const onSubmitHandler = async (e) => {
         e.preventDefault();
         
         // Frontend Validation
         if (!address.fullName.trim() || !address.phoneNumber.trim() || !address.pincode || !address.area.trim() || !address.city.trim() || !address.state.trim()) {
             return toast.error("Please fill in all address details.");
+        }
+
+        if (address.phoneNumber.length !== 10) {
+            return toast.error("Phone number must be exactly 10 digits.");
+        }
+
+        if (String(address.pincode).length !== 6) {
+            return toast.error("Pincode must be exactly 6 digits.");
         }
 
         try {
@@ -77,17 +101,25 @@ const AddAddress = () => {
                             />
                             <input
                                 className="px-4 py-3 focus:border-[var(--accent)] transition border border-gray-500/30 rounded-xl outline-none w-full text-gray-700 bg-white"
-                                type="text"
+                                type="tel"
                                 placeholder="Phone number"
-                                onChange={(e) => setAddress({ ...address, phoneNumber: e.target.value })}
+                                inputMode="numeric"
+                                autoComplete="tel"
+                                maxLength={10}
+                                pattern="[0-9]{10}"
+                                onChange={(e) => handlePhoneChange(e.target.value)}
                                 value={address.phoneNumber}
                             />
                             <div className="flex gap-4">
                                 <input
                                     className="px-4 py-3 focus:border-[var(--accent)] transition border border-gray-500/30 rounded-xl outline-none w-[40%] text-gray-700 bg-white"
-                                    type="text"
+                                    type="tel"
                                     placeholder="Pin code"
-                                    onChange={(e) => setAddress({ ...address, pincode: e.target.value })}
+                                    inputMode="numeric"
+                                    autoComplete="postal-code"
+                                    maxLength={6}
+                                    pattern="[0-9]{6}"
+                                    onChange={(e) => handlePincodeChange(e.target.value)}
                                     value={address.pincode}
                                 />
                                 <input

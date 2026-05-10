@@ -45,7 +45,7 @@ const Product = () => {
   const resolvedProductId = resolveOrderProductId(id);
   const productId = resolvedProductId || id;
   const isWishlisted = wishlistItems?.includes(productId);
-  const { openSignIn } = useClerk();
+  const { openSignIn, loaded: clerkLoaded } = useClerk();
 
   const [mainImage, setMainImage] = useState("");
   const [selectedVariantId, setSelectedVariantId] = useState("");
@@ -222,29 +222,31 @@ const Product = () => {
   };
 
   if (!productData) {
-    if (detailLoading) {
-      return <Loading />;
-    }
-
     return (
       <>
         <Navbar />
-        <div className="px-6 md:px-16 lg:px-32 py-24">
-          <div className="mx-auto max-w-2xl rounded-[2rem] border border-[var(--line-soft)] bg-white p-10 text-center shadow-sm">
-            <p className="text-sm uppercase tracking-[0.22em] text-[var(--ink-500)]">Product unavailable</p>
-            <h1 className="mt-3 text-3xl font-semibold text-[var(--ink-900)]">We could not find this product.</h1>
-            <p className="mt-3 text-[var(--ink-500)]">
-              The product may have been removed, or the catalog is still syncing. Please go back to the shop and try again.
-            </p>
-            <button
-              type="button"
-              onClick={() => router.push("/all-products")}
-              className="brand-button mt-6 px-6 py-3"
-            >
-              Back to shop
-            </button>
+        {detailLoading ? (
+          <div className="flex min-h-[40vh] items-center justify-center px-6 py-24 md:min-h-[60vh] md:px-16 lg:px-32">
+            <Loading />
           </div>
-        </div>
+        ) : (
+          <div className="px-6 md:px-16 lg:px-32 py-24">
+            <div className="mx-auto max-w-2xl rounded-[2rem] border border-[var(--line-soft)] bg-white p-10 text-center shadow-sm">
+              <p className="text-sm uppercase tracking-[0.22em] text-[var(--ink-500)]">Product unavailable</p>
+              <h1 className="mt-3 text-3xl font-semibold text-[var(--ink-900)]">We could not find this product.</h1>
+              <p className="mt-3 text-[var(--ink-500)]">
+                The product may have been removed, or the catalog is still syncing. Please go back to the shop and try again.
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push("/all-products")}
+                className="brand-button mt-6 px-6 py-3"
+              >
+                Back to shop
+              </button>
+            </div>
+          </div>
+        )}
         <Footer />
       </>
     );
@@ -462,6 +464,10 @@ const Product = () => {
               <button
                 onClick={() => {
                   if (!user) {
+                    if (!clerkLoaded) {
+                      toast.error("Please wait a moment and try again.");
+                      return;
+                    }
                     toast.error("Please log in to buy this product.");
                     openSignIn();
                     return;

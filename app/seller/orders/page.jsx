@@ -246,11 +246,13 @@ const Orders = () => {
                                 const productSource = firstItem.product && typeof firstItem.product === 'object' ? firstItem.product : firstItem;
                                 const productImage = normalizeProductImageUrl(firstItem.productImage || getProductPrimaryImage(productSource));
                                 const productAlt = productSource?.name || firstItem.productName || 'Product';
+                                const buyerName = order.buyer?.name || order.userId?.name || 'Unnamed buyer';
+                                const buyerEmail = order.buyer?.email || order.userId?.email || '';
 
                                 return (
                                     <div
                                         key={order._id}
-                                        onClick={() => router.push(`/order/${order._id}`)}
+                                        onClick={() => router.push(`/seller/orders/${order._id}`)}
                                         className="flex flex-col md:flex-row gap-5 justify-between p-5 border-b border-gray-300 cursor-pointer hover:bg-gray-50 transition"
                                     >
                                         <div className="flex-1 flex items-center gap-5">
@@ -265,6 +267,9 @@ const Orders = () => {
                                             </div>
                                             <div>
                                                 <p className='text-sm font-semibold'>{productLabel}</p>
+                                                <p className='text-xs text-gray-500'>
+                                                    Buyer: {buyerName}{buyerEmail ? ` · ${buyerEmail}` : ''}
+                                                </p>
                                                 <p className='text-xs text-gray-500'>Order Date: {new Date(order.date).toLocaleDateString()}</p>
                                                 <p className='text-xs text-gray-500'>Total: {formatPrice(order.amountInr ? order.amountInr : convertUSDToINR(order.amount), currency)}</p>
                                             </div>

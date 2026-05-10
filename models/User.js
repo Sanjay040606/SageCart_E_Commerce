@@ -1,5 +1,28 @@
 import mongoose from "mongoose";
 
+const supportHistoryTimelineSchema = new mongoose.Schema({
+    label: { type: String, default: '' },
+    date: { type: String, default: null },
+    note: { type: String, default: '' }
+}, { _id: false });
+
+const supportHistoryItemSchema = new mongoose.Schema({
+    id: { type: String, default: '' },
+    action: { type: String, default: '' },
+    orderId: { type: String, default: '' },
+    orderShortId: { type: String, default: '' },
+    productName: { type: String, default: '' },
+    orderStatus: { type: String, default: '' },
+    paymentState: { type: String, default: '' },
+    title: { type: String, default: '' },
+    summary: { type: String, default: '' },
+    timeline: { type: [supportHistoryTimelineSchema], default: [] },
+    status: { type: String, default: 'open' },
+    createdAt: { type: String, default: null },
+    updatedAt: { type: String, default: null },
+    resolvedAt: { type: String, default: null }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
     _id:{ type : String, required:true },
     name:{ type : String, required:true },
@@ -15,6 +38,8 @@ const userSchema = new mongoose.Schema({
         wonAt: { type: Date, default: Date.now },
         usedAt: { type: Date, default: null }
     }],
+    supportQueryHistory: { type: [supportHistoryItemSchema], default: [] },
+    supportQueryHistoryUpdatedAt: { type: Date },
     welcomeEmailSentAt: { type: Date }
 }, { minimize: false })
 

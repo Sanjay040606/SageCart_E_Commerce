@@ -1,5 +1,6 @@
 import { Outfit } from "next/font/google";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
 import AppProviders from "@/components/app-providers";
 
 const outfit = Outfit({ subsets: ['latin'], weight: ["300", "400", "500"] })

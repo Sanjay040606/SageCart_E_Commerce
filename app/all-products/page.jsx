@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { convertUSDToINR } from "@/lib/currencyUtils";
 import { getProductAverageRating } from "@/lib/productDisplay";
 import { dedupeCatalogProducts } from "@/lib/productCatalog";
-import { buildProductSearchTokens, matchesSearchTokens } from "@/lib/productSearch";
+import { buildProductSearchTokens, getPrimarySearchFamily, getProductSearchScore, matchesSearchTokens, normalizeSearchText, prepareSearchQuery } from "@/lib/productSearch";
 
 const PRICE_BANDS = [
   { value: "all", label: "All prices" },
@@ -306,6 +306,9 @@ const AllProductsContent = () => {
   const [sortBy, setSortBy] = useState(() => searchParams.get(ALL_PRODUCTS_URL_KEYS.sort) || "featured");
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(() => parsePageParam(searchParams.get(ALL_PRODUCTS_URL_KEYS.page)));
+  const liveSearchQuery = useMemo(() => prepareSearchQuery(searchQuery), [searchQuery]);
+  const preparedSearchQuery = liveSearchQuery;
+  const isSearchSettling = false;
 
   useEffect(() => {
     if (!showFilters) return undefined;
@@ -332,10 +335,20 @@ const AllProductsContent = () => {
       const priceInr = convertUSDToINR(product.offerPrice);
       const averageRating = getProductAverageRating(product);
       const ratingValue = averageRating || 0;
+      const searchTokens = buildProductSearchTokens(product);
+      const nameText = normalizeSearchText(product?.name ?? product?.title);
+      const categoryText = normalizeSearchText(product?.category);
+      const brandText = normalizeSearchText(product?.brand ?? product?.datasetMeta?.brand);
+      const slugText = normalizeSearchText(product?.slug ?? product?.datasetMeta?.slug);
 
       return {
         product,
-        searchTokens: buildProductSearchTokens(product),
+        searchTokens,
+        searchFamily: getPrimarySearchFamily(searchTokens),
+        nameText,
+        categoryText,
+        brandText,
+        slugText,
         priceInr,
         rating: ratingValue,
         status: product.status,
@@ -402,45 +415,64 @@ const AllProductsContent = () => {
       }
     };
 
-    const items = catalogIndex.filter(({ product, searchTokens, priceInr, rating, status }) => {
-      const matchesSearch = matchesSearchTokens(searchTokens, searchQuery);
+    const query = preparedSearchQuery.normalizedQuery;
+
+    const items = catalogIndex.filter(({ product, searchTokens, searchFamily, nameText, categoryText, brandText, slugText, priceInr, rating, status }) => {
+      const matchesSearch = matchesSearchTokens(searchTokens, query, preparedSearchQuery);
       const matchesCategory = activeCategory === "all" || product.category === activeCategory;
+      const matchesSearchFamily = !preparedSearchQuery.queryFamily
+        || searchFamily === preparedSearchQuery.queryFamily
+        || nameText === query
+        || categoryText === query
+        || brandText === query
+        || slugText === query;
 
       return (
         matchesSearch &&
         matchesCategory &&
+        matchesSearchFamily &&
         matchesPriceBand(priceInr) &&
         matchesRating(rating) &&
         matchesStock(status)
       );
-    });
+    }).map((item) => ({
+      ...item,
+      searchScore: query ? getProductSearchScore(item.product, query, item, preparedSearchQuery) : 0
+    }));
+
+    const compareBySort = (a, b) => {
+      switch (sortBy) {
+        case "price-low":
+          return a.priceInr - b.priceInr;
+        case "price-high":
+          return b.priceInr - a.priceInr;
+        case "rating-high":
+          return b.rating - a.rating;
+        case "discount-high":
+          return b.discountPercent - a.discountPercent;
+        case "stock-high":
+          return b.stock - a.stock;
+        case "newest":
+          return b.dateValue - a.dateValue;
+        default:
+          return 0;
+      }
+    };
 
     const sorted = [...items];
-    switch (sortBy) {
-      case "price-low":
-        sorted.sort((a, b) => a.priceInr - b.priceInr);
-        break;
-      case "price-high":
-        sorted.sort((a, b) => b.priceInr - a.priceInr);
-        break;
-      case "rating-high":
-        sorted.sort((a, b) => b.rating - a.rating);
-        break;
-      case "discount-high":
-        sorted.sort((a, b) => b.discountPercent - a.discountPercent);
-        break;
-      case "stock-high":
-        sorted.sort((a, b) => b.stock - a.stock);
-        break;
-      case "newest":
-        sorted.sort((a, b) => b.dateValue - a.dateValue);
-        break;
-      default:
-        break;
+    if (query) {
+      sorted.sort((a, b) => {
+        const relevanceDiff = b.searchScore - a.searchScore;
+        if (relevanceDiff !== 0) return relevanceDiff;
+        return compareBySort(a, b);
+      });
+      return sorted;
     }
 
+    sorted.sort(compareBySort);
+
     return sorted;
-  }, [activeCategory, catalogIndex, priceBand, ratingFilter, searchQuery, sortBy, stockFilter]);
+  }, [activeCategory, catalogIndex, preparedSearchQuery, priceBand, ratingFilter, sortBy, stockFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -457,7 +489,7 @@ const AllProductsContent = () => {
     if (productsLoading) return;
 
     syncAllProductsUrl({
-      searchQuery,
+      searchQuery: liveSearchQuery.normalizedQuery,
       currentPage: safeCurrentPage,
       activeCategory,
       stockFilter,
@@ -465,7 +497,7 @@ const AllProductsContent = () => {
       priceBand,
       sortBy
     });
-  }, [activeCategory, currentPage, priceBand, productsLoading, ratingFilter, safeCurrentPage, searchQuery, sortBy, stockFilter]);
+  }, [activeCategory, currentPage, liveSearchQuery.normalizedQuery, priceBand, productsLoading, ratingFilter, safeCurrentPage, sortBy, stockFilter]);
 
   const visibleProducts = useMemo(() => {
     const startIndex = (safeCurrentPage - 1) * PRODUCTS_PER_PAGE;
@@ -476,7 +508,7 @@ const AllProductsContent = () => {
   const visibleEnd = filteredProducts.length === 0 ? 0 : Math.min(safeCurrentPage * PRODUCTS_PER_PAGE, filteredProducts.length);
 
   const activeFilterCount = [
-    searchQuery.trim(),
+    liveSearchQuery.normalizedQuery,
     activeCategory !== "all",
     stockFilter !== "all",
     ratingFilter !== "all",
@@ -525,7 +557,17 @@ const AllProductsContent = () => {
   };
 
   if (productsLoading) {
-    return <Loading />;
+    return (
+      <>
+        <Navbar />
+        <main className="px-6 py-8 md:px-16 lg:px-32">
+          <section className="rounded-[2rem] border border-[var(--line-soft)] bg-[var(--bg-panel)] p-5 shadow-sm md:p-8">
+            <Loading />
+          </section>
+        </main>
+        <Footer />
+      </>
+    );
   }
 
   return (
@@ -570,7 +612,7 @@ const AllProductsContent = () => {
               type="text"
               value={searchQuery}
               onChange={(event) => handleSearchChange(event.target.value)}
-              placeholder="Search by product, brand, category, or description..."
+              placeholder="Search by name, brand, or category..."
               className="w-full flex-1 rounded-full border border-[var(--line-soft)] bg-white px-5 py-3 text-sm outline-none focus:ring-2 focus:ring-[var(--accent)]"
             />
           </div>
@@ -601,7 +643,14 @@ const AllProductsContent = () => {
           </div>
         </section>
 
-        {filteredProducts.length > 0 ? (
+        {isSearchSettling ? (
+          <div className="mt-10 rounded-[2rem] border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)]/40 p-10 text-center text-[var(--ink-500)]">
+            <p className="text-lg font-semibold text-[var(--ink-900)]">Searching...</p>
+            <p className="mt-2 text-sm">
+              Updating the results for &quot;{liveSearchQuery.normalizedQuery}&quot;.
+            </p>
+          </div>
+        ) : filteredProducts.length > 0 ? (
           <div className="py-10">
             <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {visibleProducts.map(({ product }) => (
@@ -638,8 +687,16 @@ const AllProductsContent = () => {
           </div>
         ) : (
           <div className="mt-10 rounded-[2rem] border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)]/40 p-10 text-center text-[var(--ink-500)]">
-            <p className="text-lg font-semibold text-[var(--ink-900)]">No products match your filters</p>
-            <p className="mt-2 text-sm">Try clearing one filter at a time or search with a different keyword.</p>
+            <p className="text-lg font-semibold text-[var(--ink-900)]">
+              {liveSearchQuery.normalizedQuery
+                ? `No products found for "${liveSearchQuery.normalizedQuery}"`
+                : "No products match your filters"}
+            </p>
+            <p className="mt-2 text-sm">
+              {liveSearchQuery.normalizedQuery
+                ? "Try a different product name, brand, or category."
+                : "Try clearing one filter at a time or search with a different keyword."}
+            </p>
             <button
               type="button"
               onClick={resetFilters}
@@ -677,9 +734,11 @@ const AllProductsContent = () => {
 };
 
 const AllProducts = () => {
+  const searchParams = useSearchParams();
+
   return (
     <Suspense fallback={<Loading />}>
-      <AllProductsContent />
+      <AllProductsContent key={searchParams.toString()} />
     </Suspense>
   );
 };

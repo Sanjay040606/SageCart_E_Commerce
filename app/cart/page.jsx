@@ -21,7 +21,15 @@ const Cart = () => {
   const { products, productsLoading, router, cartItems, updateCartQuantity, getCartCount, currency } = useAppContext();
 
   if (productsLoading) {
-    return <Loading />;
+    return (
+      <>
+        <Navbar />
+        <div className="flex min-h-[40vh] items-center justify-center px-6 py-10 md:min-h-[60vh] md:px-16 lg:px-32">
+          <Loading />
+        </div>
+        <Footer />
+      </>
+    );
   }
 
   const cartEntries = Object.entries(cartItems)

@@ -41,7 +41,7 @@ const SupportQueryHistory = ({
   className = "",
 }) => {
   const router = useRouter();
-  const { user, getToken } = useAppContext();
+  const { user, userData, getToken } = useAppContext();
   const [history, setHistory] = useState([]);
   const [viewFilter, setViewFilter] = useState("all");
 
@@ -54,14 +54,14 @@ const SupportQueryHistory = ({
     router.push("/help?mode=chat");
   };
 
-  const loadHistory = () => {
-    setHistory(loadSupportHistory());
+  const loadHistory = (fallbackEntries = []) => {
+    setHistory(loadSupportHistory(fallbackEntries));
   };
 
   useEffect(() => {
-    loadHistory();
+    loadHistory(userData?.supportQueryHistory || []);
 
-    const syncFromStorage = () => loadHistory();
+    const syncFromStorage = () => loadHistory(userData?.supportQueryHistory || []);
     window.addEventListener("storage", syncFromStorage);
     window.addEventListener(SUPPORT_HISTORY_EVENT, syncFromStorage);
 
@@ -69,7 +69,7 @@ const SupportQueryHistory = ({
       window.removeEventListener("storage", syncFromStorage);
       window.removeEventListener(SUPPORT_HISTORY_EVENT, syncFromStorage);
     };
-  }, []);
+  }, [userData?.supportQueryHistory]);
 
   useEffect(() => {
     const refreshHistoryStatus = async () => {
@@ -82,8 +82,11 @@ const SupportQueryHistory = ({
         });
 
         if (data.success) {
-          resolveSupportHistoryFromOrders((data.orders || []).slice());
-          setHistory(loadSupportHistory());
+          const nextHistory = resolveSupportHistoryFromOrders((data.orders || []).slice(), {
+            baseEntries: userData?.supportQueryHistory || [],
+            token
+          });
+          setHistory(nextHistory);
         }
       } catch (error) {
         console.log("Unable to refresh query history", error);
@@ -91,7 +94,7 @@ const SupportQueryHistory = ({
     };
 
     refreshHistoryStatus();
-  }, [getToken, user]);
+  }, [getToken, user, userData?.supportQueryHistory]);
 
   const filteredHistory = useMemo(() => {
     if (viewFilter === "open") {

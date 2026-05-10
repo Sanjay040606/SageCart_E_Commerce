@@ -316,8 +316,8 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
   const config = CONTEXT_CONFIG[pageContext] || CONTEXT_CONFIG.general
   const messageAreaRef = useRef(null)
   const initialQuestionRef = useRef(0)
-  const { user, getToken, router } = useAppContext()
-  const { openSignIn } = useClerk()
+  const { user, userData, getToken, router } = useAppContext()
+  const { openSignIn, loaded: clerkLoaded } = useClerk()
 
   const [globalMessages, setGlobalMessages] = useState(() => {
     if (typeof window === 'undefined') return null
@@ -347,11 +347,23 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
   const isOpen = isHelpPage ? true : globalIsOpen
   const setIsOpen = setGlobalIsOpen
 
+  const supportHistoryBaseEntries = useMemo(
+    () => (Array.isArray(userData?.supportQueryHistory) ? userData.supportQueryHistory : []),
+    [userData?.supportQueryHistory]
+  )
+  const userGreetingName = useMemo(() => {
+    if (userData?.name) return userData.name
+    const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
+    if (fullName) return fullName
+    if (user?.username) return user.username
+    return ''
+  }, [user?.firstName, user?.lastName, user?.username, userData?.name])
+
   const welcomeMessage = useMemo(() => ([
     {
       id: 'welcome',
       sender: 'bot',
-      text: `Hello${user?.firstName ? ` ${user.firstName}` : ''}, I'm ${BOT_NAME}. I can help with orders, shipping, refunds, returns, coupons, and account questions.`,
+      text: `${userGreetingName ? `Hi ${userGreetingName}` : 'Hi there'}, I'm ${BOT_NAME}. I can help with orders, shipping, refunds, returns, coupons, and account questions.`,
       timestamp: new Date().toISOString()
     },
     {
@@ -360,7 +372,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
       text: `You're in ${config.title}. Ask a question below or choose one of the quick options to get started.`,
       timestamp: new Date().toISOString()
     }
-  ]), [config.title, user?.firstName])
+  ]), [config.title, userGreetingName])
 
   const refreshOrderSupportData = async (token) => {
     const { data } = await axios.get('/api/order/list', {
@@ -377,7 +389,10 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
       : orders[0] || null
 
     setOrderSupportData({ orders, currentOrder })
-    resolveSupportHistoryFromOrders(orders)
+    resolveSupportHistoryFromOrders(orders, {
+      baseEntries: supportHistoryBaseEntries,
+      token
+    })
     return orders
   }
 
@@ -405,9 +420,20 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
 
   useEffect(() => {
     if (!user) return
+    const nextWelcomeText = welcomeMessage[0]?.text || ''
     const hasWelcome = messages.some((message) => message.id === 'welcome')
     if (!hasWelcome) {
       setMessages(welcomeMessage)
+      return
+    }
+
+    const currentWelcome = messages.find((message) => message.id === 'welcome')
+    if ((currentWelcome?.text || '') !== nextWelcomeText) {
+      setMessages((prev) => prev.map((message) => (
+        message.id === 'welcome'
+          ? { ...message, text: nextWelcomeText }
+          : message
+      )))
     }
   }, [messages, user, welcomeMessage])
 
@@ -421,7 +447,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
     const loadOrderSupportData = async () => {
       if (!user) {
         setOrderSupportData({ orders: [], currentOrder: null })
-        resolveSupportHistoryFromOrders([])
+        resolveSupportHistoryFromOrders([], { baseEntries: supportHistoryBaseEntries })
         return
       }
 
@@ -437,7 +463,13 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
   }, [getToken, orderId, user])
 
   useEffect(() => {
-    const syncSupportHistory = () => resolveSupportHistoryFromOrders(orderSupportData.orders)
+    const syncSupportHistory = async () => {
+      const token = user ? await getToken() : null
+      resolveSupportHistoryFromOrders(orderSupportData.orders, {
+        baseEntries: supportHistoryBaseEntries,
+        token
+      })
+    }
 
     syncSupportHistory()
     window.addEventListener('storage', syncSupportHistory)
@@ -447,7 +479,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
       window.removeEventListener('storage', syncSupportHistory)
       window.removeEventListener(SUPPORT_HISTORY_EVENT, syncSupportHistory)
     }
-  }, [orderSupportData.orders])
+  }, [getToken, orderSupportData.orders, supportHistoryBaseEntries, user])
 
   const pushMessage = (message) => {
     setMessages((prev) => [
@@ -479,7 +511,9 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
   )
 
   const buildHistoryResponse = () => {
-    const history = resolveSupportHistoryFromOrders(orderSupportData.orders) || loadSupportHistory()
+    const history = resolveSupportHistoryFromOrders(orderSupportData.orders, {
+      baseEntries: supportHistoryBaseEntries
+    }) || loadSupportHistory(supportHistoryBaseEntries)
     const text = history.length
       ? `Saved support requests:\n${formatQueryHistoryText(history)}`
       : 'No saved cancel or return requests yet.'
@@ -499,6 +533,10 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
     const actionLabel = SUPPORT_ACTION_LABELS[action] || action
 
     if (!user) {
+      if (!clerkLoaded) {
+        return buildDefaultResponse('Please wait a moment while sign-in finishes loading.')
+      }
+
       openSignIn()
       return buildDefaultResponse('To answer order-specific requests like tracking, cancellation, refund, or return, please sign in first. The login window has been opened for you.')
     }
@@ -620,7 +658,10 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
           orders: updatedOrders,
           currentOrder
         })
-        resolveSupportHistoryFromOrders(updatedOrders)
+        resolveSupportHistoryFromOrders(updatedOrders, {
+          baseEntries: supportHistoryBaseEntries,
+          token
+        })
         return currentOrder || order
       }
     } catch (reloadError) {
@@ -693,7 +734,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
           order: updatedOrder,
           status,
           note: summary
-        }))
+        }), { token: await getToken(), baseEntries: supportHistoryBaseEntries })
         setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
         return buildActionSuccessResponse(action, updatedOrder)
       } catch (error) {
@@ -757,7 +798,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
             order: updatedOrder,
             status,
             note: summary
-          }))
+          }), { token: await getToken(), baseEntries: supportHistoryBaseEntries })
           setSupportFlow({ stage: 'idle', action: null, eligibleOrders: [], selectedOrderId: null })
           return buildActionSuccessResponse(supportFlow.action, updatedOrder)
         } catch (error) {

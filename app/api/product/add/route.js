@@ -57,6 +57,7 @@ const buildCombinedStorageVariantOptions = ({
 export async function POST(request) {
 
     try {
+        await connectDB();
         
         const { userId } = getAuth(request)
 
@@ -104,9 +105,7 @@ export async function POST(request) {
             resolvedVariantMode = 'variant';
         }
 
-        // Validate promo code only if provided
         if (promoCode) {
-            await connectDB();
             const existingPromo = await Product.findOne({ promoCode });
             if (existingPromo) {
                 return NextResponse.json({ success: false, message: 'promo code already exists, use a unique code'})
@@ -165,11 +164,15 @@ export async function POST(request) {
             }
         }
 
+        const manualSourceId = `manual-${String(userId || "seller").trim()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const normalizedName = String(name || "").trim();
+        const normalizedCategory = String(category || "").trim();
+
         const newProduct = await Product.create({
             userId,
-            name,
-            description,
-            category,
+            name: normalizedName,
+            description: String(description || "").trim(),
+            category: normalizedCategory,
             price:Number(price),
             offerPrice:Number(offerPrice),
             stock: Math.max(0, stock),
@@ -184,7 +187,15 @@ export async function POST(request) {
             sizes: resolvedVariantMode === 'size' ? parsedVariantValues : [],
             variantMode: resolvedVariantMode,
             variantOptions,
-            date: Date.now()
+            date: Date.now(),
+            source: "manual",
+            sourceId: manualSourceId,
+            datasetMeta: {
+                source: "manual",
+                sourceId: manualSourceId,
+                category: normalizedCategory,
+                slug: slugifyText(normalizedName)
+            }
 
         })
 

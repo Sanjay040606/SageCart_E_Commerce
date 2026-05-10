@@ -13,7 +13,7 @@ const SupportFeedbackBox = ({
   className = "",
 }) => {
   const { user } = useAppContext();
-  const { openSignIn } = useClerk();
+  const { openSignIn, loaded: clerkLoaded } = useClerk();
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,6 +26,11 @@ const SupportFeedbackBox = ({
     event.preventDefault();
 
     if (!user) {
+      if (!clerkLoaded) {
+        toast.error("Please wait a moment and try again.");
+        return;
+      }
+
       openSignIn();
       return;
     }
@@ -73,10 +78,14 @@ const SupportFeedbackBox = ({
 
         <button
           type="button"
-          onClick={openSignIn}
-          className="brand-button rounded-full px-5 py-3 text-sm font-semibold"
+          onClick={() => {
+            if (!clerkLoaded) return;
+            openSignIn();
+          }}
+          disabled={!clerkLoaded}
+          className="brand-button rounded-full px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Sign in to continue
+          {clerkLoaded ? "Sign in to continue" : "Loading sign in..."}
         </button>
       </section>
     );
