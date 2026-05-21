@@ -1,5 +1,5 @@
 'use client'
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import ProductCard from '@/components/ProductCard'
@@ -8,14 +8,22 @@ import Loading from '@/components/Loading'
 import { dedupeCatalogProducts } from '@/lib/productCatalog'
 
 const Wishlist = () => {
-    const { products, wishlistItems, productsLoading } = useAppContext()
+    const { products, wishlistItems, productsLoading, user, fetchUserData, userDataLoading } = useAppContext()
     const catalogProducts = useMemo(() => dedupeCatalogProducts(products), [products])
     const wishlistedProducts = useMemo(
         () => catalogProducts.filter(product => wishlistItems?.includes(product._id)),
         [catalogProducts, wishlistItems]
     )
 
-    if (productsLoading) {
+    useEffect(() => {
+        if (user) {
+            void fetchUserData()
+        }
+    }, [fetchUserData, user])
+
+    const isWaitingForUserData = Boolean(user) && userDataLoading && wishlistItems.length === 0
+
+    if (productsLoading || isWaitingForUserData) {
         return (
             <>
                 <Navbar />

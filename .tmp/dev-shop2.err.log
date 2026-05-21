@@ -1,0 +1,7 @@
+ ⨯ [Error: querySrv ETIMEOUT _mongodb._tcp.cluster0.id8y56g.mongodb.net] {
+  errno: undefined,
+  code: 'ETIMEOUT',
+  syscall: 'querySrv',
+  hostname: '_mongodb._tcp.cluster0.id8y56g.mongodb.net',
+  digest: '882256898'
+}

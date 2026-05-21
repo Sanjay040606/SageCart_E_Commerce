@@ -13,7 +13,8 @@
     "seed:marketplace": "node scripts/seed-dataset-products.mjs",
     "convert:flipkart": "node scripts/convert-flipkart-dataset.mjs",
     "seed:flipkart": "node scripts/seed-flipkart-dataset.mjs",
-    "seed:stock": "node scripts/seed-stock.js"
+    "seed:stock": "node scripts/seed-stock.js",
+    "migrate:seller-images": "node scripts/migrate-seller-images.js"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.23.2",

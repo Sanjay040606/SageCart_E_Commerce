@@ -13,12 +13,21 @@ const productSchema = new mongoose.Schema({
     sourceId: { type: String, sparse: true, unique: true, trim: true },
     userId: { type: String, required: true, ref: "user" },
     name: { type: String, required: true},
+    brand: { type: String, default: "" },
     description: { type: String, required: true},
     price: { type: Number, required: true},
     offerPrice: { type: Number, required: true},
     image: { type: Array, required: true},
     category: { type: String, required: true},
-    promoCode: { type: String, sparse: true, unique: true, uppercase: true, trim: true },
+    promoCode: {
+        type: String,
+        sparse: true,
+        unique: true,
+        set: (value) => {
+            const text = String(value ?? "").trim().toUpperCase();
+            return text || undefined;
+        }
+    },
     stock: { type: Number, default: 0, min: 0 },
     status: {
         type: String,

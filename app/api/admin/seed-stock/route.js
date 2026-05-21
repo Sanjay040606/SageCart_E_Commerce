@@ -1,6 +1,7 @@
 import connectDB from "@/config/db";
 import Product from "@/models/Product";
 import { buildStockUpdateOperations } from "@/lib/stockSeeder";
+import { invalidateCatalogSnapshot } from "@/lib/catalogSnapshot";
 import { NextResponse } from "next/server";
 
 const BATCH_SIZE = 500;
@@ -63,6 +64,8 @@ export async function POST(request) {
       bulkSummary.modifiedCount += result.modifiedCount || 0;
       bulkSummary.upsertedCount += result.upsertedCount || 0;
     }
+
+    invalidateCatalogSnapshot();
 
     return NextResponse.json({
       success: true,

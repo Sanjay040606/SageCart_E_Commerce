@@ -26,12 +26,16 @@ import {
   getVariantDisplayDescription,
   getVariantDisplayImage,
   getVariantDisplayPriceInr,
+  getVariantDisplayOriginalPriceInr,
   isVariantUnavailable,
   normalizeProductImageUrl
 } from "@/lib/productDisplay";
 import { dedupeCatalogProducts } from "@/lib/productCatalog";
 
 const RELATED_PRODUCTS_PER_PAGE = 6;
+
+const isManualCatalogProduct = (product = {}) =>
+  String(product?.source || product?.datasetMeta?.source || "").trim().toLowerCase() === "manual";
 
 const Product = () => {
   const { id } = useParams();
@@ -66,7 +70,19 @@ const Product = () => {
     [catalogProducts, productId]
   );
   const resolvedDetailProduct = detailProduct && String(detailProduct._id) === String(productId) ? detailProduct : null;
-  const productData = resolvedDetailProduct || summaryProduct;
+  const summaryAvailability = useMemo(() => getProductAvailabilitySummary(summaryProduct || {}), [summaryProduct]);
+  const detailAvailability = useMemo(() => getProductAvailabilitySummary(resolvedDetailProduct || {}), [resolvedDetailProduct]);
+  const shouldPreferSummaryProduct = Boolean(
+    summaryProduct &&
+      resolvedDetailProduct &&
+      String(summaryProduct._id) !== String(resolvedDetailProduct._id) &&
+      isManualCatalogProduct(summaryProduct) &&
+      (
+        !isManualCatalogProduct(resolvedDetailProduct) ||
+        (detailAvailability.status === "out_of_stock" && summaryAvailability.status !== "out_of_stock")
+      )
+  );
+  const productData = shouldPreferSummaryProduct ? summaryProduct : (resolvedDetailProduct || summaryProduct);
 
   const galleryEntries = useMemo(
     () => getProductVariantGalleryEntries(productData || {}),
@@ -168,6 +184,7 @@ const Product = () => {
   const variantOfferPriceInr = selectedVariant ? getVariantDisplayPriceInr(productData, selectedVariant) : null;
   const displayPriceInr = variantOfferPriceInr || baseOfferPriceInr;
   const displayOriginalPriceInr = selectedVariant?.originalPriceInr || baseOriginalPriceInr;
+  const brandDisplay = productData?.brand || productData?.datasetMeta?.brand || "Brand not set";
   const variantLabel = selectedVariant?.label || "";
   const variantDescription = selectedVariant ? getVariantDisplayDescription(productData, selectedVariant) : "";
   const variantTypeLabel = selectedVariant?.type === "color"
@@ -355,7 +372,7 @@ const Product = () => {
                 <tbody>
                   <tr>
                     <td className="text-gray-600 font-medium">Brand</td>
-                    <td className="text-gray-800/50 ">{productData.brand || productData.datasetMeta?.brand || productData.datasetMeta?.sellerName || "Generic"}</td>
+                    <td className="text-gray-800/50 ">{brandDisplay}</td>
                   </tr>
                   {galleryEntries.length > 0 && (
                     <tr>
@@ -385,6 +402,7 @@ const Product = () => {
                 <div className="flex gap-2 flex-wrap">
                   {variantOptions.map((option, index) => {
                     const optionPrice = getVariantDisplayPriceInr(productData, option);
+                    const optionOriginalPrice = getVariantDisplayOriginalPriceInr(productData, option);
                     const isSelected = selectedVariant?.id === option.id;
                     const optionUnavailable = isVariantUnavailable(option);
                     return (
@@ -395,7 +413,7 @@ const Product = () => {
                           setSelectedVariantId(option.id);
                           setMainImage(normalizeProductImageUrl(getVariantDisplayImage(productData, option)));
                         }}
-                        className={`px-4 py-2 border rounded-full text-sm transition ${
+                        className={`flex min-w-[11rem] flex-col items-start gap-0.5 px-4 py-2 border rounded-2xl text-left text-sm transition ${
                           isSelected
                             ? optionUnavailable
                               ? "border-red-400 bg-red-50 text-red-600"
@@ -404,12 +422,21 @@ const Product = () => {
                               ? "border-red-200 text-red-500 bg-red-50/40 hover:bg-red-50"
                               : "border-gray-300 hover:bg-gray-50"
                         }`}
-                      >
-                        <span>{option.label}</span>
+                        >
+                        <span className="font-medium">{option.label}</span>
                         {optionUnavailable && (
-                          <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-red-500">Out of stock</span>
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-red-500">Out of stock</span>
                         )}
-                        {optionPrice ? <span className="ml-2 text-xs opacity-70">{formatPrice(optionPrice, currency)}</span> : null}
+                        {optionPrice ? (
+                          <span className="flex items-baseline gap-1 text-xs">
+                            <span className="font-semibold">{formatPrice(optionPrice, currency)}</span>
+                            {optionOriginalPrice && optionOriginalPrice > optionPrice && (
+                              <span className="text-[10px] text-gray-500 line-through">
+                                {formatPrice(optionOriginalPrice, currency)}
+                              </span>
+                            )}
+                          </span>
+                        ) : null}
                       </button>
                     );
                   })}
@@ -523,37 +550,41 @@ const Product = () => {
             )}
           </div>
 
-          <div className="flex flex-col items-center mb-4 mt-16">
-            <p className="text-3xl font-medium">Featured <span className="font-medium text-[var(--accent-strong)]">Products</span></p>
-            <div className="w-28 h-0.5 bg-[var(--accent)] mt-2"></div>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 mt-6 pb-14 w-full">
-            {visibleRelatedProducts.map((product) => <ProductCard key={product._id} product={product} />)}
-          </div>
-          {totalRelatedPages > 1 && (
-            <div className="mb-16 flex w-full flex-col gap-3 rounded-2xl border border-[var(--line-soft)] bg-white px-4 py-4 md:flex-row md:items-center md:justify-between">
-              <p className="text-sm text-gray-500">
-                Showing {relatedStart}-{relatedEnd} of {relatedProducts.length} related products
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRelatedPage((page) => Math.max(1, page - 1))}
-                  disabled={safeRelatedPage === 1}
-                  className="rounded-full border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRelatedPage((page) => Math.min(totalRelatedPages, page + 1))}
-                  disabled={safeRelatedPage === totalRelatedPages}
-                  className="rounded-full border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Next
-                </button>
+          {visibleRelatedProducts.length > 0 && (
+            <>
+              <div className="flex flex-col items-center mb-4 mt-16">
+                <p className="text-3xl font-medium">Featured <span className="font-medium text-[var(--accent-strong)]">Products</span></p>
+                <div className="w-28 h-0.5 bg-[var(--accent)] mt-2"></div>
               </div>
-            </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 mt-6 pb-14 w-full">
+                {visibleRelatedProducts.map((product) => <ProductCard key={product._id} product={product} />)}
+              </div>
+              {totalRelatedPages > 1 && (
+                <div className="mb-16 flex w-full flex-col gap-3 rounded-2xl border border-[var(--line-soft)] bg-white px-4 py-4 md:flex-row md:items-center md:justify-between">
+                  <p className="text-sm text-gray-500">
+                    Showing {relatedStart}-{relatedEnd} of {relatedProducts.length} related products
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRelatedPage((page) => Math.max(1, page - 1))}
+                      disabled={safeRelatedPage === 1}
+                      className="rounded-full border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRelatedPage((page) => Math.min(totalRelatedPages, page + 1))}
+                      disabled={safeRelatedPage === totalRelatedPages}
+                      className="rounded-full border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
           <Link href="/all-products" className="text-sm text-[var(--accent-strong)] hover:underline -mt-8 mb-16">
             View all products

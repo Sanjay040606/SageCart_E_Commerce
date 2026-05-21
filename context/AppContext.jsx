@@ -12,7 +12,7 @@ import {
     parseCartKey
 } from "@/lib/cartUtils";
 
-const PRODUCT_CACHE_KEY = "sagecart:products-cache:v1";
+const PRODUCT_CACHE_KEY = "sagecart:products-cache:v2";
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 const readCachedProducts = () => {
@@ -78,6 +78,7 @@ export const AppContextProvider = (props) => {
     const [isSeller, setIsSeller] = useState(false)
     const [cartItems, setCartItems] = useState({})
     const [wishlistItems, setWishlistItems] = useState([])
+    const [userDataLoading, setUserDataLoading] = useState(false)
 
     const [chatMessages, setChatMessages] = useState(null)
     const [isChatOpen, setIsChatOpen] = useState(false)
@@ -86,16 +87,16 @@ export const AppContextProvider = (props) => {
     const [catalogRefreshPending, setCatalogRefreshPending] = useState(false)
 
     useEffect(() => {
-        const cachedProducts = readCachedProducts();
-        if (cachedProducts.length > 0) {
-            setProducts(cachedProducts);
-            setProductsLoading(false);
+        const nextIsSeller = String(user?.publicMetadata?.role ?? "").trim().toLowerCase() === "seller";
+        setIsSeller(nextIsSeller);
+
+        if (!user) {
+            setUserData(false);
+            setUserDataLoading(false);
         }
-    }, []);
+    }, [user?.id, user?.publicMetadata?.role]);
 
     const shouldLoadProductCatalog =
-      currentPathname.startsWith("/all-products") ||
-      currentPathname.startsWith("/product") ||
       currentPathname.startsWith("/cart") ||
       currentPathname.startsWith("/wishlist");
     const fetchProductData = useCallback(async ({
@@ -141,10 +142,9 @@ export const AppContextProvider = (props) => {
 
     const fetchUserData = async () => {
         try {
-            
-            if (user.publicMetadata.role === 'seller') {
-                setIsSeller(true)
-            }
+            setUserDataLoading(true)
+
+            setIsSeller(String(user?.publicMetadata?.role ?? "").trim().toLowerCase() === "seller")
 
             const token = await getToken()
 
@@ -279,6 +279,8 @@ export const AppContextProvider = (props) => {
             await axios.post('/api/user/wishlist/update', { productId }, { headers: { Authorization: `Bearer ${token}` } })
         } catch (error) {
             toast.error(error.message)
+        } finally {
+            setUserDataLoading(false)
         }
     }
 
@@ -290,10 +292,17 @@ export const AppContextProvider = (props) => {
             return undefined
         }
 
+        if (products.length === 0) {
+            const cachedProducts = readCachedProducts();
+            if (cachedProducts.length > 0) {
+                setProducts(cachedProducts);
+                setProductsLoading(false);
+            }
+        }
+
         if (products.length > 0) {
             setProductsLoading(false)
             const shouldRefresh =
-                currentPathname.startsWith("/all-products") &&
                 lastCatalogRefreshPathRef.current !== currentPathname &&
                 Date.now() - lastCatalogRefreshAtRef.current > CATALOG_REFRESH_INTERVAL_MS
 
@@ -314,17 +323,11 @@ export const AppContextProvider = (props) => {
         }
     }, [currentPathname, fetchProductData, products.length, shouldLoadProductCatalog])
 
-    useEffect(() => {
-        if (user) {
-            fetchUserData()
-        }
-    }, [user])
-
     const value = {
         user, getToken,
         currency, router,
         isSeller, setIsSeller,
-        userData, fetchUserData,
+        userData, fetchUserData, userDataLoading,
         products, productsLoading, fetchProductData,
         cartItems, setCartItems,
         addToCart, updateCartQuantity,

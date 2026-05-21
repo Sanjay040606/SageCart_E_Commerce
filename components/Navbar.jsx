@@ -8,6 +8,54 @@ import { useClerk, UserButton } from "@clerk/nextjs";
 import axios from "axios";
 import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
 import { getProductPrimaryImage, normalizeProductImageUrl } from "@/lib/productDisplay";
+import { usePathname } from "next/navigation";
+
+const CATALOG_CACHE_PREFIX = "sagecart:all-products-cache:v3";
+const ALL_PRODUCTS_CACHE_KEY = `${CATALOG_CACHE_PREFIX}:limit=20`;
+
+const readAllProductsCache = () => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(ALL_PRODUCTS_CACHE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    return parsed?.response ? parsed.response : null;
+  } catch {
+    return null;
+  }
+};
+
+const storeAllProductsCache = (response) => {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      ALL_PRODUCTS_CACHE_KEY,
+      JSON.stringify({
+        timestamp: Date.now(),
+        response
+      })
+    );
+  } catch {
+    // Ignore cache storage failures.
+  }
+};
+
+const prefetchAllProductsCache = async () => {
+  if (typeof window === "undefined") return;
+  if (readAllProductsCache()) return;
+
+  try {
+    const { data } = await axios.get("/api/product/list?limit=20");
+    if (data?.success) {
+      storeAllProductsCache(data);
+    }
+  } catch {
+    // Background warmup only.
+  }
+};
 
 const userButtonAppearance = {
   elements: {
@@ -31,6 +79,7 @@ const userButtonAppearance = {
 
 const Navbar = () => {
   const { isSeller, router, user, currency } = useAppContext();
+  const pathname = usePathname();
   const { openSignIn, loaded: clerkLoaded } = useClerk();
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -39,6 +88,7 @@ const Navbar = () => {
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [pendingSignIn, setPendingSignIn] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const allProductsWarmupRequestedRef = useRef(false);
   const searchRequestIdRef = useRef(0);
   const trimmedSearchQuery = searchQuery.trim();
   const hasSearchResults = suggestions.length > 0;
@@ -116,6 +166,36 @@ const Navbar = () => {
     openSignIn();
   }, [clerkLoaded, openSignIn, pendingSignIn]);
 
+  useEffect(() => {
+    if (pathname === "/all-products") {
+      return undefined;
+    }
+
+    let timerId = null;
+    let cancelled = false;
+
+    const runWarmup = () => {
+      if (cancelled || allProductsWarmupRequestedRef.current) return;
+      allProductsWarmupRequestedRef.current = true;
+      prefetchAllProductsCache();
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      timerId = window.requestIdleCallback(runWarmup, { timeout: 2500 });
+    } else {
+      timerId = window.setTimeout(runWarmup, 1200);
+    }
+
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window && typeof timerId === "number") {
+        window.cancelIdleCallback(timerId);
+      } else if (timerId) {
+        clearTimeout(timerId);
+      }
+    };
+  }, [pathname]);
+
   const handleSearch = (e) => {
     if (e.key === "Enter" && searchQuery.trim()) {
       router.push(`/all-products?search=${encodeURIComponent(searchQuery)}`);
@@ -149,6 +229,12 @@ const Navbar = () => {
     setShowSearch((prev) => !prev);
   };
 
+  const handleOpenShop = () => {
+    router.prefetch("/all-products");
+    prefetchAllProductsCache();
+    router.push("/all-products");
+  };
+
   return (
     <nav className="sticky top-0 z-40 mx-4 mt-4 rounded-full brand-surface px-4 py-3 text-[var(--ink-700)] sm:px-6 md:px-8 lg:px-12">
       <div className="flex items-center justify-between gap-2 sm:gap-3 md:gap-4">
@@ -169,7 +255,16 @@ const Navbar = () => {
 
         <div className="hidden lg:flex items-center gap-6 xl:gap-8 text-sm font-medium text-[var(--ink-700)]">
           <Link href="/" className="transition hover:text-[var(--ink-900)]">Home</Link>
-          <Link href="/all-products" className="transition hover:text-[var(--ink-900)]">Shop</Link>
+          <Link
+            href="/all-products"
+            className="transition hover:text-[var(--ink-900)]"
+            onMouseEnter={prefetchAllProductsCache}
+            onFocus={prefetchAllProductsCache}
+            onPointerDown={prefetchAllProductsCache}
+            onTouchStart={prefetchAllProductsCache}
+          >
+            Shop
+          </Link>
           <Link href="/about" className="transition hover:text-[var(--ink-900)]">About</Link>
           <Link href="/contact" className="transition hover:text-[var(--ink-900)]">Contact</Link>
           <Link href="/help" className="transition hover:text-[var(--ink-900)]">Help</Link>
@@ -266,9 +361,10 @@ const Navbar = () => {
           {isSeller && (
             <button
               onClick={() => router.push('/seller')}
-              className="hidden shrink-0 rounded-full border border-[var(--line-soft)] bg-white/80 px-4 py-2 text-xs transition hover:bg-[var(--accent-tint)] xl:inline-flex"
+              className="hidden shrink-0 items-center rounded-full border border-[var(--line-soft)] bg-white/80 px-3 py-2 text-xs transition hover:bg-[var(--accent-tint)] sm:inline-flex sm:px-4"
             >
-              Seller Dashboard
+              <span className="sm:hidden">Seller</span>
+              <span className="hidden sm:inline">Seller Dashboard</span>
             </button>
           )}
 
@@ -276,7 +372,7 @@ const Navbar = () => {
             <UserButton appearance={userButtonAppearance}>
               <UserButton.MenuItems>
                 <UserButton.Action label="Home" labelIcon={<HomeIcon />} onClick={() => router.push('/')} />
-                <UserButton.Action label="Shop" labelIcon={<BoxIcon />} onClick={() => router.push('/all-products')} />
+                <UserButton.Action label="Shop" labelIcon={<BoxIcon />} onClick={handleOpenShop} />
                 <UserButton.Action label="About" labelIcon={<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4b5563" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 21a9 9 0 100-18 9 9 0 000 18z" /></svg>} onClick={() => router.push('/about')} />
                 <UserButton.Action label="Contact" labelIcon={<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4b5563" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 8.25A2.25 2.25 0 015.25 6h13.5A2.25 2.25 0 0121 8.25v7.5A2.25 2.25 0 0118.75 18H5.25A2.25 2.25 0 013 15.75v-7.5z" /><path strokeLinecap="round" strokeLinejoin="round" d="m3.75 7.5 8.25 5.25L20.25 7.5" /></svg>} onClick={() => router.push('/contact')} />
                 <UserButton.Action label="Help Center" labelIcon={<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#4b5563" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} onClick={() => router.push('/help')} />

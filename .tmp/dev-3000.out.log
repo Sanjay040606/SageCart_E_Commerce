@@ -1,0 +1,30 @@
+
+> ecommerce-inngest@0.1.0 dev
+> node scripts/dev-server.js --port 3000
+
+   ▲ Next.js 15.3.8
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.11:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 2s
+ ✓ Compiled /middleware in 365ms (267 modules)
+ ○ Compiling /api/product/list ...
+ ✓ Compiled /api/product/list in 1146ms (418 modules)
+ GET /api/product/list?page=1&limit=2&sort=newest 200 in 19963ms
+ ✓ Compiled in 61ms
+ ✓ Compiled /api/product/list in 339ms (138 modules)
+ GET /api/product/list?page=1&limit=2&sort=newest 200 in 12202ms
+ GET /api/product/list?page=1&limit=2&sort=newest 200 in 11681ms
+ ✓ Compiled in 522ms (138 modules)
+ GET /api/product/list?page=1&limit=2&sort=newest 200 in 13411ms
+ ✓ Compiled in 69ms
+ ✓ Compiled /api/product/list in 365ms (138 modules)
+ GET /api/product/list?page=1&limit=2&sort=newest 200 in 19411ms
+ ✓ Compiled in 54ms
+ ✓ Compiled /api/product/list in 178ms (138 modules)
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 707ms (754 modules)
+ GET /api/product/list?page=1&limit=2&sort=newest 500 in 2319ms
+ ✓ Compiled in 937ms (55 modules)

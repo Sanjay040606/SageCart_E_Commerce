@@ -6,7 +6,7 @@ import { useAppContext } from "@/context/AppContext";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { convertINRToUSD } from "@/lib/currencyUtils";
-import { getCategoryVariantConfig, inferCategoryVariantMode, parseDelimitedValues } from "@/lib/productVariantRules";
+import { getCategoryVariantConfig, inferCategoryVariantMode, parseDelimitedPrices, parseDelimitedValues } from "@/lib/productVariantRules";
 
 const MAX_PRODUCT_IMAGE_SIZE_MB = 5;
 const MAX_PRODUCT_IMAGE_SIZE_BYTES = MAX_PRODUCT_IMAGE_SIZE_MB * 1024 * 1024;
@@ -16,6 +16,7 @@ const AddProduct = () => {
 
   const [files, setFiles] = useState([]);
   const [name, setName] = useState('');
+  const [brand, setBrand] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Earphone');
   const [price, setPrice] = useState('');
@@ -24,6 +25,8 @@ const AddProduct = () => {
   const [promoCode, setPromoCode] = useState('');
   const [colorValues, setColorValues] = useState('');
   const [variantValues, setVariantValues] = useState('');
+  const [variantOfferPrices, setVariantOfferPrices] = useState('');
+  const [variantOriginalPrices, setVariantOriginalPrices] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
   const categoryOptions = useMemo(() => ([
@@ -71,6 +74,11 @@ const AddProduct = () => {
   ]), []);
 
   const variantConfig = useMemo(() => getCategoryVariantConfig(category), [category]);
+  const hasVariantPricingEntries = Boolean(
+    variantValues.trim() ||
+    variantOfferPrices.trim() ||
+    variantOriginalPrices.trim()
+  );
 
   const handleProductImageChange = (index, file) => {
     if (!file) return;
@@ -93,11 +101,14 @@ const AddProduct = () => {
 
     const parsedVariantValues = parseDelimitedValues(variantValues);
     const parsedColorValues = parseDelimitedValues(colorValues);
+    const parsedVariantOfferPrices = parseDelimitedPrices(variantOfferPrices);
+    const parsedVariantOriginalPrices = parseDelimitedPrices(variantOriginalPrices);
     const variantMode = inferCategoryVariantMode(category);
 
     const formData = new FormData()
 
     formData.append('name', name)
+    formData.append('brand', brand)
     formData.append('description', description)
     formData.append('category', category)
     formData.append('price', convertINRToUSD(price))
@@ -107,6 +118,9 @@ const AddProduct = () => {
     formData.append('variantMode', variantMode)
     formData.append('colorValues', parsedColorValues.join(', '))
     formData.append('variantValues', parsedVariantValues.join(', '))
+    formData.append('variantPrices', parsedVariantOfferPrices.join(', '))
+    formData.append('variantOfferPrices', parsedVariantOfferPrices.join(', '))
+    formData.append('variantOriginalPrices', parsedVariantOriginalPrices.join(', '))
 
     for (let index = 0; index < files.length; index++) {
       formData.append('images', files[index])
@@ -124,6 +138,7 @@ const AddProduct = () => {
         await fetchProductData({ bustCache: true, silent: true });
         setFiles([]);
         setName('');
+        setBrand('');
         setDescription('');
         setCategory('Earphone');
         setPrice('');
@@ -131,6 +146,8 @@ const AddProduct = () => {
         setPromoCode('');
         setColorValues('');
         setVariantValues('');
+        setVariantOfferPrices('');
+        setVariantOriginalPrices('');
       } else {
         toast.error(data.message)
       }
@@ -193,6 +210,23 @@ const AddProduct = () => {
         </div>
 
         <div className="flex flex-col gap-1 w-full max-w-none">
+          <label className="text-base font-medium" htmlFor="product-brand">
+            Brand <span className="text-gray-500 text-sm">(Optional)</span>
+          </label>
+          <input
+            id="product-brand"
+            type="text"
+            placeholder="Samsung, Nike, Apple..."
+            className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
+            onChange={(e) => setBrand(e.target.value)}
+            value={brand}
+          />
+          <p className="text-xs text-gray-500">
+            This appears on the product page and in search results instead of the old Generic fallback.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1 w-full max-w-none">
           <label className="text-base font-medium" htmlFor="product-description">
             Product Description
           </label>
@@ -227,6 +261,8 @@ const AddProduct = () => {
             </datalist>
           </div>
 
+          {!hasVariantPricingEntries && (
+            <>
           <div className="flex flex-col gap-1 w-full min-w-0">
             <label className="text-base font-medium" htmlFor="product-price">
               Product Price (₹)
@@ -234,12 +270,14 @@ const AddProduct = () => {
             <input
               id="product-price"
               type="number"
-              placeholder="0"
+              placeholder="Leave blank if variants have prices"
               className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
               onChange={(e) => setPrice(e.target.value)}
               value={price}
-              required
             />
+            <p className="text-xs text-gray-500">
+              For RAM / ROM, color, or size variants, you can leave this empty and SageCart will derive the summary price from the variant prices.
+            </p>
           </div>
 
           <div className="flex flex-col gap-1 w-full min-w-0">
@@ -249,13 +287,17 @@ const AddProduct = () => {
             <input
               id="offer-price"
               type="number"
-              placeholder="0"
+              placeholder="Leave blank if variants have prices"
               className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
               onChange={(e) => setOfferPrice(e.target.value)}
               value={offerPrice}
-              required
             />
+            <p className="text-xs text-gray-500">
+              If you already entered Variant Offer Prices and Variant Original Prices, leave this empty.
+            </p>
           </div>
+            </>
+          )}
 
           <div className="flex flex-col gap-1 w-full min-w-0">
             <label className="text-base font-medium" htmlFor="stock-count">
@@ -323,6 +365,44 @@ const AddProduct = () => {
               {variantConfig.helperText} Upload the main image first, then the option images in the same order.
             </p>
           </div>
+
+          <div className="mt-4 flex flex-col gap-1">
+            <label className="text-base font-medium" htmlFor="product-variant-offer-prices">
+              Variant Offer Prices <span className="text-gray-500 text-sm">(Optional)</span>
+            </label>
+            <input
+              id="product-variant-offer-prices"
+              type="text"
+              placeholder="12999, 13999, 14999"
+              className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
+              value={variantOfferPrices}
+              onChange={(e) => setVariantOfferPrices(e.target.value)}
+            />
+            <p className="text-xs text-gray-500">
+              Enter the selling price for each variant in the same order as the variant values.
+            </p>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-1">
+            <label className="text-base font-medium" htmlFor="product-variant-original-prices">
+              Variant Original Prices <span className="text-gray-500 text-sm">(Optional)</span>
+            </label>
+            <input
+              id="product-variant-original-prices"
+              type="text"
+              placeholder="14999, 15999, 17999"
+              className="w-full rounded border border-gray-500/40 bg-white px-3 py-2 outline-none md:py-2.5"
+              value={variantOriginalPrices}
+              onChange={(e) => setVariantOriginalPrices(e.target.value)}
+            />
+            <p className="text-xs text-gray-500">
+              Enter the MRP/original price in the same order. Leave this blank if you want the main product price to act as the original price.
+            </p>
+          </div>
+
+          <p className="text-xs text-gray-500">
+            Tip: once you start entering variant values, SageCart hides the base product price fields and uses the variant summary price automatically.
+          </p>
         </div>
 
         <button

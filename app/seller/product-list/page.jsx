@@ -41,6 +41,34 @@ const getVariantSummary = (product) => {
   return "-";
 };
 
+const getMobileStatusBadgeClasses = (status) => {
+  switch (status) {
+    case "active":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "low_stock":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "out_of_stock":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-gray-200 bg-gray-50 text-gray-600";
+  }
+};
+
+const getMobileStatusLabel = (status) => {
+  switch (status) {
+    case "active":
+      return "In stock";
+    case "low_stock":
+      return "Low stock";
+    case "out_of_stock":
+      return "Out of stock";
+    case "inactive":
+      return "Inactive";
+    default:
+      return status || "Unknown";
+  }
+};
+
 const ProductList = () => {
   const { router, getToken, user, currency } = useAppContext();
   const [products, setProducts] = useState([]);
@@ -72,9 +100,9 @@ const ProductList = () => {
   }, [fetchSellerProduct, user]);
 
   return (
-    <div className="flex-1 min-h-screen w-full min-w-0 overflow-x-hidden flex flex-col justify-between">
+    <div className="w-full min-w-0 overflow-x-hidden flex flex-col">
       {loading ? (
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex min-h-[60vh] items-center justify-center px-4 py-10">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--accent)] mx-auto mb-4"></div>
             <p className="text-gray-600">Loading your products...</p>
@@ -98,54 +126,85 @@ const ProductList = () => {
                     const productImage = normalizeProductImageUrl(getProductPrimaryImage(product));
                     const variantLabel = getCategoryVariantConfig(product.category).label;
                     const variantSummary = getVariantSummary(product);
+                    const mobileStatusLabel = getMobileStatusLabel(availability.status);
+
                     return (
-                      <div key={product._id} className="w-full rounded-2xl border border-gray-500/20 bg-white p-4 shadow-sm">
-                        <div className="flex items-start gap-3">
-                          <div className="shrink-0 rounded-xl bg-gray-500/10 p-2">
-                            <Image
-                              src={productImage || assets.box_icon}
-                              alt="product Image"
-                              className="h-20 w-20 object-contain"
-                              width={1280}
-                              height={720}
-                            />
+                      <div
+                        key={product._id}
+                        className="relative w-full overflow-hidden rounded-[1.5rem] border border-[rgba(111,129,103,0.18)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf6_100%)] shadow-[0_18px_42px_rgba(77,87,74,0.10)]"
+                      >
+                        <div className="h-1 bg-[linear-gradient(90deg,var(--accent)_0%,#9fb392_100%)]" />
+                        <div className="p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="relative shrink-0">
+                              <div className="absolute -inset-2 rounded-[1.6rem] bg-[radial-gradient(circle_at_50%_35%,rgba(111,129,103,0.22)_0%,rgba(111,129,103,0.10)_35%,transparent_72%)] blur-lg" />
+                              <div className="relative shrink-0 rounded-[1.35rem] border border-white/80 bg-[linear-gradient(180deg,#f3f5ef_0%,#e8eee3_100%)] p-2.5 shadow-inner">
+                              <Image
+                                src={productImage || assets.box_icon}
+                                alt="product Image"
+                                className="h-20 w-20 object-contain"
+                                width={1280}
+                                height={720}
+                              />
+                              </div>
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-base font-semibold text-[var(--ink-900)]">{product.name}</p>
+                                  <p className="mt-1 text-sm text-[var(--ink-500)]">{product.category}</p>
+                                </div>
+
+                                <span
+                                  className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] shadow-sm backdrop-blur-[2px] ${getMobileStatusBadgeClasses(availability.status)}`}
+                                >
+                                  {mobileStatusLabel}
+                                </span>
+                              </div>
+
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <span className="brand-tag rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                                  {variantLabel}
+                                </span>
+                                <span className="rounded-full border border-[var(--line-soft)] bg-white px-2.5 py-1 text-[10px] font-medium text-[var(--ink-700)]">
+                                  {variantSummary}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-gray-900">{product.name}</p>
-                            <p className="mt-1 text-xs text-gray-500">{product.category}</p>
+
+                          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                            <div className="rounded-2xl border border-white/80 bg-[linear-gradient(180deg,#f8f6f0_0%,#f1f4ec_100%)] px-3 py-3">
+                              <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--ink-500)]">Price</p>
+                              <p className="mt-1 text-sm font-semibold text-[var(--ink-900)]">
+                                {formatPrice(Math.round(product.offerPrice * 94), currency)}
+                              </p>
+                            </div>
+
+                            <div className="rounded-2xl border border-white/80 bg-[linear-gradient(180deg,#f8f6f0_0%,#f1f4ec_100%)] px-3 py-3">
+                              <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--ink-500)]">Stock</p>
+                              <p className="mt-1 text-sm font-semibold text-[var(--ink-900)]">{product.stock ?? 0}</p>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-4">
+                            <p className="text-xs text-[var(--ink-500)]">
+                              Tap to review the full seller record.
+                            </p>
+                            <button
+                              onClick={() => router.push(`/product/${product._id}`)}
+                              className="brand-button inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium shadow-[0_10px_20px_rgba(111,129,103,0.18)]"
+                            >
+                              <span>Visit</span>
+                              <Image
+                                className="h-3 w-3"
+                                src={assets.redirect_icon}
+                                alt="redirect_icon"
+                              />
+                            </button>
                           </div>
                         </div>
-
-                        <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-gray-600">
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-gray-400">{variantLabel}</p>
-                            <p className="mt-1">{variantSummary}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-gray-400">Price</p>
-                            <p className="mt-1 font-medium text-gray-900">{formatPrice(Math.round(product.offerPrice * 94), currency)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-gray-400">Stock</p>
-                            <p className="mt-1">{product.stock ?? 0}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-gray-400">Status</p>
-                            <p className="mt-1 capitalize">{availability.status}</p>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => router.push(`/product/${product._id}`)}
-                          className="brand-button mt-4 flex w-full items-center justify-center gap-2 rounded-md px-4 py-3"
-                        >
-                          <span>Visit</span>
-                          <Image
-                            className="h-3.5"
-                            src={assets.redirect_icon}
-                            alt="redirect_icon"
-                          />
-                        </button>
                       </div>
                     );
                   })}

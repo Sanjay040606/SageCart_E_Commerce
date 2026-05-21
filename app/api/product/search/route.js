@@ -32,6 +32,10 @@ const buildWordPattern = (value) => {
     if (!term) return "";
 
     const escaped = escapeRegex(term).replace(/\s+/g, "\\s+");
+    if (term.replace(/\s+/g, "").length < 3) {
+        return `(?:^|[^a-z0-9])${escaped}`;
+    }
+
     return `(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`;
 };
 

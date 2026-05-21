@@ -17,7 +17,7 @@ const Layout = ({ children }) => {
   return (
     <div className="min-h-screen w-full">
       <Navbar />
-      <div className="border-b border-gray-200 bg-white/80 px-3 py-3 md:hidden">
+      <div className="border-b border-gray-200 bg-white/80 px-3 py-3 lg:hidden">
         <div className="flex gap-2 overflow-x-auto pb-1">
           {sellerNavItems.map((item) => {
             const isActive = pathname === item.path
@@ -38,11 +38,11 @@ const Layout = ({ children }) => {
           })}
         </div>
       </div>
-      <div className='flex w-full flex-col md:flex-row'>
-        <div className="hidden md:block md:shrink-0">
+      <div className='flex w-full flex-col lg:flex-row'>
+        <div className="hidden lg:block lg:shrink-0">
           <Sidebar />
         </div>
-        <main className="flex-1 min-w-0 w-full">
+        <main className="flex-1 min-w-0 w-full overflow-x-hidden">
           {children}
         </main>
       </div>

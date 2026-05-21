@@ -1,5 +1,5 @@
 'use client'
-import React from "react";
+import React, { useEffect } from "react";
 import toast from "react-hot-toast";
 import { assets } from "@/assets/assets";
 import OrderSummary from "@/components/OrderSummary";
@@ -18,9 +18,17 @@ import {
 import { getProductPrimaryImage, getProductVariantImage, normalizeProductImageUrl } from "@/lib/productDisplay";
 
 const Cart = () => {
-  const { products, productsLoading, router, cartItems, updateCartQuantity, getCartCount, currency } = useAppContext();
+  const { products, productsLoading, router, cartItems, updateCartQuantity, getCartCount, currency, user, fetchUserData, userDataLoading } = useAppContext();
 
-  if (productsLoading) {
+  useEffect(() => {
+    if (user) {
+      void fetchUserData();
+    }
+  }, [fetchUserData, user]);
+
+  const isWaitingForUserData = Boolean(user) && userDataLoading && Object.keys(cartItems || {}).length === 0;
+
+  if (productsLoading || isWaitingForUserData) {
     return (
       <>
         <Navbar />

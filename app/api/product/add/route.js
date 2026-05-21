@@ -4,8 +4,16 @@ import { getAuth } from "@clerk/nextjs/server";
 import { v2 as cloudinary } from "cloudinary";
 import authSeller from "@/lib/authSeller";
 import { getProductStatusFromStock } from "@/lib/productStock";
+import { invalidateCatalogSnapshot } from "@/lib/catalogSnapshot";
 import { NextResponse } from "next/server";
-import { buildVariantOptionsFromValues, inferCategoryVariantMode, parseDelimitedValues } from "@/lib/productVariantRules";
+import {
+    buildVariantOptionsFromValues,
+    inferCategoryVariantMode,
+    parseDelimitedPrices,
+    parseDelimitedValues,
+    normalizeVariantPricingPair
+} from "@/lib/productVariantRules";
+import { convertINRToUSD, convertUSDToINR } from "@/lib/currencyUtils";
 
 const MAX_PRODUCT_IMAGE_SIZE_MB = 5;
 const MAX_PRODUCT_IMAGE_SIZE_BYTES = MAX_PRODUCT_IMAGE_SIZE_MB * 1024 * 1024;
@@ -26,22 +34,78 @@ const slugifyText = (value) =>
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
 
+const convertUsdFieldToInr = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? convertUSDToINR(parsed) : null;
+};
+
+const normalizeBasePricing = ({ price, offerPrice }) => {
+    return normalizeVariantPricingPair(
+        convertUsdFieldToInr(offerPrice),
+        convertUsdFieldToInr(price)
+    );
+};
+
+const deriveSummaryPricingFromVariants = (variantOptions = []) => {
+    const normalizedOptions = Array.isArray(variantOptions)
+        ? variantOptions
+            .map((option) =>
+                normalizeVariantPricingPair(option?.offerPriceInr ?? option?.priceInr, option?.originalPriceInr)
+            )
+            .filter((option) => Number.isFinite(option.priceInr) || Number.isFinite(option.originalPriceInr))
+        : [];
+
+    if (!normalizedOptions.length) {
+        return null;
+    }
+
+    return [...normalizedOptions].sort((a, b) => {
+        const aPrice = Number.isFinite(a.priceInr) ? a.priceInr : Number.MAX_SAFE_INTEGER;
+        const bPrice = Number.isFinite(b.priceInr) ? b.priceInr : Number.MAX_SAFE_INTEGER;
+        return aPrice - bPrice;
+    })[0];
+};
+
 const buildCombinedStorageVariantOptions = ({
     colors = [],
     variants = [],
     images = [],
-    fallbackImage = ""
+    fallbackImage = "",
+    prices = [],
+    originalPrices = []
 }) => {
     const colorList = parseDelimitedValues(colors);
     const variantList = parseDelimitedValues(variants);
 
     if (!colorList.length || !variantList.length) return [];
 
+    const totalCombinationCount = colorList.length * variantList.length;
+
+    const resolvePricingIndex = (list, colorIndex, variantIndex) => {
+        if (!Array.isArray(list) || list.length === 0) return null;
+
+        if (list.length >= totalCombinationCount) {
+            return colorIndex * variantList.length + variantIndex;
+        }
+
+        if (list.length >= variantList.length) {
+            return variantIndex;
+        }
+
+        return Math.min(variantIndex, list.length - 1);
+    };
+
     return colorList.flatMap((color, colorIndex) => {
         const colorImage = String(images[colorIndex] ?? images[0] ?? fallbackImage ?? "").trim();
 
         return variantList.map((variant, variantIndex) => {
             const label = `${color} / ${variant}`;
+            const priceIndex = resolvePricingIndex(prices, colorIndex, variantIndex);
+            const originalPriceIndex = resolvePricingIndex(originalPrices, colorIndex, variantIndex);
+            const { priceInr, originalPriceInr } = normalizeVariantPricingPair(
+                priceIndex !== null ? prices[priceIndex] : null,
+                originalPriceIndex !== null ? originalPrices[originalPriceIndex] : null
+            );
 
             return {
                 id: slugifyText(`storage-${color}-${variant}-${colorIndex}-${variantIndex}`),
@@ -52,6 +116,9 @@ const buildCombinedStorageVariantOptions = ({
                 description: `Color: ${color} • Configuration: ${variant}`,
                 image: colorImage ? [colorImage] : [],
                 images: colorImage ? [colorImage] : [],
+                priceInr,
+                offerPriceInr: priceInr,
+                originalPriceInr,
                 available: true
             };
         });
@@ -75,6 +142,7 @@ export async function POST(request) {
 
         const name = formData.get('name');
         const description = formData.get('description');
+        const brand = formData.get('brand');
         const category = formData.get('category');
         const price = formData.get('price');
         const offerPrice = formData.get('offerPrice');
@@ -85,8 +153,13 @@ export async function POST(request) {
             .toLowerCase() || 'variant';
         const colorValues = formData.get('colorValues') || '';
         const variantValues = formData.get('variantValues') || '';
+        const variantPrices = formData.get('variantPrices') || '';
+        const variantOfferPrices = formData.get('variantOfferPrices') || variantPrices || '';
+        const variantOriginalPrices = formData.get('variantOriginalPrices') || '';
         const parsedColorValues = parseDelimitedValues(colorValues);
         const parsedVariantValues = parseDelimitedValues(variantValues);
+        const parsedVariantOfferPrices = parseDelimitedPrices(variantOfferPrices);
+        const parsedVariantOriginalPrices = parseDelimitedPrices(variantOriginalPrices);
 
         const files = formData.getAll('images');
         const hasColorEntries = parsedColorValues.length > 0;
@@ -158,7 +231,9 @@ export async function POST(request) {
             category,
             values: parsedVariantValues,
             images: image,
-            fallbackImage
+            fallbackImage,
+            prices: parsedVariantOfferPrices,
+            originalPrices: parsedVariantOriginalPrices
         });
 
         if (resolvedVariantMode === 'storage') {
@@ -167,33 +242,63 @@ export async function POST(request) {
                     colors: parsedColorValues,
                     variants: parsedVariantValues,
                     images: image,
-                    fallbackImage
+                    fallbackImage,
+                    prices: parsedVariantOfferPrices,
+                    originalPrices: parsedVariantOriginalPrices
                 });
             } else if (hasColorEntries) {
                 variantOptions = buildVariantOptionsFromValues({
                     category: "Color",
                     values: parsedColorValues,
                     images: image,
-                    fallbackImage
+                    fallbackImage,
+                    prices: parsedVariantOfferPrices,
+                    originalPrices: parsedVariantOriginalPrices
                 });
             }
         }
 
+        const basePricingInr = normalizeBasePricing({ price, offerPrice });
+        const summaryPricingInr = deriveSummaryPricingFromVariants(variantOptions);
+        const resolvedOfferPriceInr =
+            basePricingInr.priceInr ??
+            basePricingInr.originalPriceInr ??
+            summaryPricingInr?.priceInr ??
+            summaryPricingInr?.originalPriceInr ??
+            null;
+        const resolvedOriginalPriceInr =
+            basePricingInr.originalPriceInr ??
+            basePricingInr.priceInr ??
+            summaryPricingInr?.originalPriceInr ??
+            summaryPricingInr?.priceInr ??
+            resolvedOfferPriceInr;
+
+        if (!resolvedOfferPriceInr && !resolvedOriginalPriceInr) {
+            return NextResponse.json({
+                success: false,
+                message: "Please enter product price and offer price, or add variant prices so SageCart can derive them."
+            });
+        }
+
         const manualSourceId = `manual-${String(userId || "seller").trim()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const normalizedName = String(name || "").trim();
+        const normalizedBrand = String(brand || "").trim();
         const normalizedCategory = String(category || "").trim();
+        const productOfferPriceUsd = Number(convertINRToUSD(resolvedOfferPriceInr || 0));
+        const productPriceUsd = Number(convertINRToUSD(resolvedOriginalPriceInr || resolvedOfferPriceInr || 0));
 
         const newProduct = await Product.create({
             userId,
             name: normalizedName,
+            brand: normalizedBrand,
             description: String(description || "").trim(),
             category: normalizedCategory,
-            price:Number(price),
-            offerPrice:Number(offerPrice),
+            price: productPriceUsd,
+            offerPrice: productOfferPriceUsd,
             stock: Math.max(0, stock),
             status: getProductStatusFromStock(Math.max(0, stock)),
             image,
-            promoCode,
+            ...(promoCode ? { promoCode } : {}),
             colors: resolvedVariantMode === 'color'
                 ? (hasColorEntries ? parsedColorValues : parsedVariantValues)
                 : resolvedVariantMode === 'storage'
@@ -208,11 +313,14 @@ export async function POST(request) {
             datasetMeta: {
                 source: "manual",
                 sourceId: manualSourceId,
+                brand: normalizedBrand,
                 category: normalizedCategory,
                 slug: slugifyText(normalizedName)
             }
 
         })
+
+        invalidateCatalogSnapshot();
 
         return NextResponse.json({ success: true, message: 'Upload successful', newProduct })
 

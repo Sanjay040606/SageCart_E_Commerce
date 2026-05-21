@@ -318,6 +318,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
   const initialQuestionRef = useRef(0)
   const { user, userData, getToken, router } = useAppContext()
   const { openSignIn, loaded: clerkLoaded } = useClerk()
+  const orderSupportLoadedRef = useRef(false)
 
   const [globalMessages, setGlobalMessages] = useState(() => {
     if (typeof window === 'undefined') return null
@@ -345,6 +346,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
   const messages = useMemo(() => globalMessages || [], [globalMessages])
   const setMessages = setGlobalMessages
   const isOpen = isHelpPage ? true : globalIsOpen
+  const shouldLoadOrderSupportData = isHelpPage || globalIsOpen
   const setIsOpen = setGlobalIsOpen
 
   const supportHistoryBaseEntries = useMemo(
@@ -444,26 +446,44 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
   }, [messages, isTyping])
 
   useEffect(() => {
+    if (!user?.id) {
+      orderSupportLoadedRef.current = false
+    }
+  }, [user?.id])
+
+  useEffect(() => {
     const loadOrderSupportData = async () => {
       if (!user) {
+        orderSupportLoadedRef.current = false
         setOrderSupportData({ orders: [], currentOrder: null })
         resolveSupportHistoryFromOrders([], { baseEntries: supportHistoryBaseEntries })
+        return
+      }
+
+      if (!shouldLoadOrderSupportData) {
+        return
+      }
+
+      if (orderSupportLoadedRef.current) {
         return
       }
 
       try {
         const token = await getToken()
         await refreshOrderSupportData(token)
+        orderSupportLoadedRef.current = true
       } catch (error) {
         console.log('Unable to load chatbot order support data', error)
       }
     }
 
     loadOrderSupportData()
-  }, [getToken, orderId, user])
+  }, [getToken, orderId, shouldLoadOrderSupportData, supportHistoryBaseEntries, user])
 
   useEffect(() => {
     const syncSupportHistory = async () => {
+      if (!user || !shouldLoadOrderSupportData) return
+
       const token = user ? await getToken() : null
       resolveSupportHistoryFromOrders(orderSupportData.orders, {
         baseEntries: supportHistoryBaseEntries,
@@ -479,7 +499,7 @@ const Chatbot = ({ pageContext = 'general', isHelpPage = false, mobileFullScreen
       window.removeEventListener('storage', syncSupportHistory)
       window.removeEventListener(SUPPORT_HISTORY_EVENT, syncSupportHistory)
     }
-  }, [getToken, orderSupportData.orders, supportHistoryBaseEntries, user])
+  }, [getToken, orderSupportData.orders, shouldLoadOrderSupportData, supportHistoryBaseEntries, user])
 
   const pushMessage = (message) => {
     setMessages((prev) => [
