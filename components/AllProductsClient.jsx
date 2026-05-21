@@ -6,6 +6,10 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Loading from "@/components/Loading";
 import { prepareSearchQuery } from "@/lib/productSearch";
+import {
+  readPersistedAllProductsReturnToPath,
+  writePersistedAllProductsReturnToPath
+} from "@/lib/navigationUtils";
 
 const PRICE_BANDS = [
   { value: "all", label: "All prices" },
@@ -118,6 +122,15 @@ const normalizeCatalogResponse = (data = {}) => ({
   }
 });
 
+const isDefaultAllProductsState = (state = {}) =>
+  String(state.searchQuery ?? "") === "" &&
+  String(state.activeCategory ?? "all") === "all" &&
+  String(state.stockFilter ?? "all") === "all" &&
+  String(state.ratingFilter ?? "all") === "all" &&
+  String(state.priceBand ?? "all") === "all" &&
+  String(state.sortBy ?? "featured") === "featured" &&
+  Number(state.currentPage ?? 1) === 1;
+
 const readCatalogCache = (cacheKey) => {
   if (typeof window === "undefined") return null;
 
@@ -163,7 +176,8 @@ const buildCatalogRequestParams = ({
   stockFilter,
   ratingFilter,
   priceBand,
-  sortBy
+  sortBy,
+  includeLimit = true
 }) => {
   const params = new URLSearchParams();
   const normalizedSearchQuery = prepareSearchQuery(searchQuery).normalizedQuery;
@@ -175,12 +189,12 @@ const buildCatalogRequestParams = ({
   if (ratingFilter !== "all") params.set(ALL_PRODUCTS_URL_KEYS.rating, ratingFilter);
   if (priceBand !== "all") params.set(ALL_PRODUCTS_URL_KEYS.price, priceBand);
   if (sortBy !== "featured") params.set(ALL_PRODUCTS_URL_KEYS.sort, sortBy);
-  params.set("limit", String(PRODUCTS_PER_PAGE));
+  if (includeLimit) params.set("limit", String(PRODUCTS_PER_PAGE));
 
   return params;
 };
 
-const syncAllProductsUrl = ({
+const buildAllProductsReturnToPath = ({
   searchQuery,
   currentPage,
   activeCategory,
@@ -189,21 +203,18 @@ const syncAllProductsUrl = ({
   priceBand,
   sortBy
 }) => {
-  if (typeof window === "undefined") return;
-
-  const nextParams = new URLSearchParams();
-  const normalizedSearchQuery = prepareSearchQuery(searchQuery).normalizedQuery;
-
-  if (normalizedSearchQuery) nextParams.set(ALL_PRODUCTS_URL_KEYS.search, normalizedSearchQuery);
-  if (currentPage > 1) nextParams.set(ALL_PRODUCTS_URL_KEYS.page, String(currentPage));
-  if (activeCategory !== "all") nextParams.set(ALL_PRODUCTS_URL_KEYS.category, activeCategory);
-  if (stockFilter !== "all") nextParams.set(ALL_PRODUCTS_URL_KEYS.stock, stockFilter);
-  if (ratingFilter !== "all") nextParams.set(ALL_PRODUCTS_URL_KEYS.rating, ratingFilter);
-  if (priceBand !== "all") nextParams.set(ALL_PRODUCTS_URL_KEYS.price, priceBand);
-  if (sortBy !== "featured") nextParams.set(ALL_PRODUCTS_URL_KEYS.sort, sortBy);
-
-  const nextUrl = `${window.location.pathname}${nextParams.toString() ? `?${nextParams.toString()}` : ""}`;
-  window.history.replaceState(window.history.state, "", nextUrl);
+  const params = buildCatalogRequestParams({
+    searchQuery,
+    currentPage,
+    activeCategory,
+    stockFilter,
+    ratingFilter,
+    priceBand,
+    sortBy,
+    includeLimit: false
+  });
+  const queryString = params.toString();
+  return `/all-products${queryString ? `?${queryString}` : ""}`;
 };
 
 const FilterSectionTitle = ({ title, subtitle }) => (
@@ -414,7 +425,8 @@ const FilterDrawer = ({
 
 const AllProductsContent = ({
   searchParams: searchParamsProp = {},
-  initialCatalogResponse = EMPTY_CATALOG_RESPONSE
+  initialCatalogResponse = EMPTY_CATALOG_RESPONSE,
+  initialCatalogReady = false
 }) => {
   const initialUrlState = readAllProductsStateFromParams(searchParamsProp);
 
@@ -427,23 +439,40 @@ const AllProductsContent = ({
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(() => initialUrlState.currentPage);
   const [catalogResponse, setCatalogResponse] = useState(() => initialCatalogResponse);
-  const [catalogLoading, setCatalogLoading] = useState(() => !(initialCatalogResponse?.products?.length > 0));
+  const [catalogLoading, setCatalogLoading] = useState(() => !initialCatalogReady);
   const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const hydratedRequestKeyRef = useRef("");
   const inFlightRequestKeyRef = useRef("");
-  const hasVisibleCatalogProductsRef = useRef(false);
+  const hasVisibleCatalogProductsRef = useRef(Boolean(initialCatalogResponse?.products?.length > 0));
+  const lastVisibleCatalogResponseRef = useRef(
+    initialCatalogResponse?.products?.length > 0 ? initialCatalogResponse : null
+  );
   const initialRequestKeyRef = useRef("");
-  const skipInitialFetchRef = useRef(Boolean(initialCatalogResponse?.products?.length > 0));
+  const skipInitialFetchRef = useRef(Boolean(initialCatalogReady));
+  const hasRestoredPersistedStateRef = useRef(false);
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const preparedSearchQuery = useMemo(() => prepareSearchQuery(deferredSearchQuery), [deferredSearchQuery]);
   const normalizedSearchQuery = preparedSearchQuery.normalizedQuery;
-  const isSearchSettling = searchQuery.trim() !== deferredSearchQuery.trim();
-  const hasCatalogProducts = catalogResponse.products.length > 0;
+  const displayCatalogResponse = useMemo(() => {
+    if (catalogResponse.products.length > 0) {
+      return catalogResponse;
+    }
+
+    if ((catalogLoading || catalogRefreshing) && lastVisibleCatalogResponseRef.current?.products?.length > 0) {
+      return lastVisibleCatalogResponseRef.current;
+    }
+
+    return catalogResponse;
+  }, [catalogLoading, catalogRefreshing, catalogResponse]);
 
   useEffect(() => {
-    hasVisibleCatalogProductsRef.current = hasCatalogProducts;
-  }, [hasCatalogProducts]);
+    if (catalogResponse.products.length > 0) {
+      lastVisibleCatalogResponseRef.current = catalogResponse;
+    }
+
+    hasVisibleCatalogProductsRef.current = displayCatalogResponse.products.length > 0;
+  }, [catalogResponse, displayCatalogResponse.products.length]);
 
   const requestParams = useMemo(
     () =>
@@ -496,12 +525,48 @@ const AllProductsContent = ({
     return undefined;
   }, [requestKey]);
 
+  useIsomorphicLayoutEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (hasRestoredPersistedStateRef.current) return undefined;
+
+    if (!isDefaultAllProductsState(initialUrlState)) {
+      return undefined;
+    }
+
+    const persistedPath = readPersistedAllProductsReturnToPath();
+    if (!persistedPath || persistedPath === "/all-products") {
+      return undefined;
+    }
+
+    try {
+      const persistedUrl = new URL(persistedPath, window.location.origin);
+      const restoredState = readAllProductsStateFromParams(persistedUrl.searchParams);
+
+      if (isDefaultAllProductsState(restoredState)) {
+        return undefined;
+      }
+
+      hasRestoredPersistedStateRef.current = true;
+      setSearchQuery(restoredState.searchQuery);
+      setActiveCategory(restoredState.activeCategory);
+      setStockFilter(restoredState.stockFilter);
+      setRatingFilter(restoredState.ratingFilter);
+      setPriceBand(restoredState.priceBand);
+      setSortBy(restoredState.sortBy);
+      setCurrentPage(restoredState.currentPage);
+    } catch {
+      // Ignore malformed persisted paths.
+    }
+
+    return undefined;
+  }, [initialUrlState]);
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
     if (
       skipInitialFetchRef.current &&
-      initialCatalogResponse?.products?.length > 0 &&
+      initialCatalogReady &&
       requestKey === initialRequestKeyRef.current
     ) {
       skipInitialFetchRef.current = false;
@@ -605,7 +670,7 @@ const AllProductsContent = ({
         inFlightRequestKeyRef.current = "";
       }
     };
-  }, [currentPage, initialCatalogResponse, requestKey]);
+  }, [currentPage, initialCatalogReady, initialCatalogResponse, requestKey]);
 
   useEffect(() => {
     if (catalogResponse.pagination.totalPages > 0 && currentPage > catalogResponse.pagination.totalPages) {
@@ -613,29 +678,17 @@ const AllProductsContent = ({
     }
   }, [catalogResponse.pagination.totalPages, currentPage]);
 
-  useEffect(() => {
-    syncAllProductsUrl({
-      searchQuery: normalizedSearchQuery,
-      currentPage: catalogResponse.pagination.page || currentPage,
-      activeCategory,
-      stockFilter,
-      ratingFilter,
-      priceBand,
-      sortBy
-    });
-  }, [activeCategory, catalogResponse.pagination.page, currentPage, normalizedSearchQuery, priceBand, ratingFilter, sortBy, stockFilter]);
-
-  const pagination = catalogResponse.pagination;
+  const pagination = displayCatalogResponse.pagination;
   const totalPages = Math.max(1, pagination.totalPages || 1);
   const safeCurrentPage = Math.min(pagination.page || currentPage, totalPages);
   const visibleStart = pagination.start || 0;
   const visibleEnd = pagination.end || 0;
   const categories = useMemo(() => {
-    const uniqueCategories = Array.isArray(catalogResponse.catalogStats.categories)
-      ? [...catalogResponse.catalogStats.categories].sort((a, b) => a.localeCompare(b))
+    const uniqueCategories = Array.isArray(displayCatalogResponse.catalogStats.categories)
+      ? [...displayCatalogResponse.catalogStats.categories].sort((a, b) => a.localeCompare(b))
       : [];
     return ["all", ...uniqueCategories];
-  }, [catalogResponse.catalogStats.categories]);
+  }, [displayCatalogResponse.catalogStats.categories]);
 
   const activeFilterCount = [
     searchQuery.trim(),
@@ -686,19 +739,28 @@ const AllProductsContent = ({
     setCurrentPage(1);
   };
 
-  if (catalogLoading && catalogResponse.products.length === 0) {
-    return (
-      <>
-        <Navbar />
-        <main className="px-6 py-8 md:px-16 lg:px-32">
-          <section className="rounded-[2rem] border border-[var(--line-soft)] bg-[var(--bg-panel)] p-5 shadow-sm md:p-8">
-            <Loading variant="catalog" label="Loading catalog..." />
-          </section>
-        </main>
-        <Footer />
-      </>
-    );
-  }
+  const currentReturnToPath = useMemo(
+    () =>
+      buildAllProductsReturnToPath({
+        searchQuery,
+        currentPage: displayCatalogResponse.pagination.page || currentPage,
+        activeCategory,
+        stockFilter,
+        ratingFilter,
+        priceBand,
+        sortBy
+      }),
+    [activeCategory, currentPage, displayCatalogResponse.pagination.page, priceBand, ratingFilter, searchQuery, sortBy, stockFilter]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    window.history.replaceState(window.history.state, "", currentReturnToPath);
+    writePersistedAllProductsReturnToPath(currentReturnToPath);
+  }, [currentReturnToPath]);
+
+  const shouldShowInitialGridLoading = catalogLoading && displayCatalogResponse.products.length === 0;
 
   return (
     <>
@@ -751,14 +813,9 @@ const AllProductsContent = ({
             <span className="rounded-full border border-[var(--line-soft)] bg-white px-3 py-1">
               {activeFilterCount} active filters
             </span>
-            {catalogRefreshing && catalogResponse.products.length > 0 && (
+            {catalogRefreshing && displayCatalogResponse.products.length > 0 && (
               <span className="rounded-full border border-[var(--line-soft)] bg-white px-3 py-1">
                 Updating catalog in the background...
-              </span>
-            )}
-            {isSearchSettling && (
-              <span className="rounded-full border border-[var(--line-soft)] bg-white px-3 py-1">
-                Searching...
               </span>
             )}
             {activeFilterCount > 0 && (
@@ -783,11 +840,17 @@ const AllProductsContent = ({
           </div>
         </section>
 
-        {catalogResponse.products.length > 0 ? (
+        {shouldShowInitialGridLoading ? (
+          <div className="py-10">
+            <div className="rounded-[2rem] border border-[var(--line-soft)] bg-[var(--bg-panel)] p-5 shadow-sm md:p-8">
+              <Loading variant="catalog" label="Loading catalog..." />
+            </div>
+          </div>
+        ) : displayCatalogResponse.products.length > 0 ? (
           <div className="py-10">
             <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {catalogResponse.products.map((product) => (
-                <ProductCard key={product._id} product={product} />
+              {displayCatalogResponse.products.map((product) => (
+                <ProductCard key={product._id} product={product} returnTo={currentReturnToPath} />
               ))}
             </div>
 

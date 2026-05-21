@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useAppContext } from '@/context/AppContext';
 import { convertUSDToINR, formatPrice } from '@/lib/currencyUtils';
 import { getProductAvailabilitySummary, getProductAverageRating, getProductPrimaryImage, getProductReviewCount, normalizeProductImageUrl } from '@/lib/productDisplay';
+import { buildCurrentReturnToPath } from '@/lib/navigationUtils';
 
 const STAR_LEVELS = [0, 1, 2, 3, 4];
 
@@ -22,7 +23,7 @@ const getStatusDisplay = (status, stock) => {
     }
 }
 
-const ProductCard = memo(({ product }) => {
+const ProductCard = memo(({ product, returnTo }) => {
 
     const { currency, router, wishlistItems, toggleWishlist } = useAppContext()
     const isWishlisted = wishlistItems?.includes(product._id)
@@ -34,10 +35,15 @@ const ProductCard = memo(({ product }) => {
     const isAvailable = availability.status === 'active' || availability.status === 'low_stock'
     const availabilityLabel = statusInfo?.text || (!isAvailable ? 'Unavailable' : '')
     const priceInr = convertUSDToINR(product.offerPrice)
+    const handleCardClick = () => {
+        const targetReturnTo = returnTo || buildCurrentReturnToPath();
+        router.push(`/product/${product._id}?returnTo=${encodeURIComponent(targetReturnTo)}`);
+        scrollTo(0, 0);
+    };
 
     return (
         <div
-            onClick={() => { router.push('/product/' + product._id); scrollTo(0, 0) }}
+            onClick={handleCardClick}
             className="flex flex-col items-start gap-0.5 max-w-[200px] w-full cursor-pointer"
         >
             <div className="cursor-pointer group relative bg-gray-500/10 rounded-lg w-full h-52 flex items-center justify-center">

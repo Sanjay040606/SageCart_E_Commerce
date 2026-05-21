@@ -9,9 +9,11 @@ import axios from "axios";
 import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
 import { getProductPrimaryImage, normalizeProductImageUrl } from "@/lib/productDisplay";
 import { usePathname } from "next/navigation";
+import { buildCurrentReturnToPath, clearPersistedAllProductsReturnToPath } from "@/lib/navigationUtils";
 
 const CATALOG_CACHE_PREFIX = "sagecart:all-products-cache:v3";
 const ALL_PRODUCTS_CACHE_KEY = `${CATALOG_CACHE_PREFIX}:limit=20`;
+const SEARCH_MIN_CHARS = 1;
 
 const readAllProductsCache = () => {
   if (typeof window === "undefined") return null;
@@ -100,7 +102,7 @@ const Navbar = () => {
     const fetchSuggestions = async () => {
       const query = searchQuery.trim();
 
-      if (query.length < 2) {
+      if (query.length < SEARCH_MIN_CHARS) {
         setSuggestions([]);
         setShowSuggestions(false);
         setIsSearching(false);
@@ -137,7 +139,7 @@ const Navbar = () => {
       }
     };
 
-    const timer = setTimeout(fetchSuggestions, 200);
+    const timer = setTimeout(fetchSuggestions, 60);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
@@ -145,7 +147,7 @@ const Navbar = () => {
     setSearchQuery(value);
 
     const query = value.trim();
-    if (query.length < 2) {
+    if (query.length < SEARCH_MIN_CHARS) {
       setSuggestions([]);
       setShowSuggestions(false);
       setIsSearching(false);
@@ -206,7 +208,8 @@ const Navbar = () => {
   };
 
   const handleSuggestionClick = (productId) => {
-    router.push(`/product/${productId}`);
+    const returnTo = buildCurrentReturnToPath();
+    router.push(`/product/${productId}?returnTo=${encodeURIComponent(returnTo)}`);
     setSearchQuery("");
     setSuggestions([]);
     setShowSuggestions(false);
@@ -230,6 +233,7 @@ const Navbar = () => {
   };
 
   const handleOpenShop = () => {
+    clearPersistedAllProductsReturnToPath();
     router.prefetch("/all-products");
     prefetchAllProductsCache();
     router.push("/all-products");
@@ -294,7 +298,7 @@ const Navbar = () => {
                       setShowSearch(false);
                       setShowSuggestions(false);
                     }, 200)}
-                    onFocus={() => searchQuery.trim().length >= 2 && setShowSuggestions(true)}
+                    onFocus={() => searchQuery.trim().length >= SEARCH_MIN_CHARS && setShowSuggestions(true)}
                     placeholder="Search by name, brand, or category..."
                     autoFocus
                     className="min-w-0 flex-1 rounded-full border border-[var(--line-soft)] bg-white/80 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
@@ -311,7 +315,7 @@ const Navbar = () => {
                   </button>
                 </div>
 
-                {showSuggestions && isSearching && trimmedSearchQuery.length >= 2 && (
+                {showSuggestions && isSearching && trimmedSearchQuery.length >= SEARCH_MIN_CHARS && (
                   <div className="mt-3 rounded-2xl border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-5 text-center">
                     <p className="text-sm font-semibold text-[var(--ink-900)]">Searching...</p>
                     <p className="mt-1 text-xs text-[var(--ink-500)]">Finding the closest product matches.</p>
@@ -348,7 +352,7 @@ const Navbar = () => {
                   </div>
                 )}
 
-                {showSuggestions && !isSearching && trimmedSearchQuery.length >= 2 && !hasSearchResults && (
+                {showSuggestions && !isSearching && trimmedSearchQuery.length >= SEARCH_MIN_CHARS && !hasSearchResults && (
                   <div className="mt-3 rounded-2xl border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-5 text-center">
                     <p className="text-sm font-semibold text-[var(--ink-900)]">No products found</p>
                     <p className="mt-1 text-xs text-[var(--ink-500)]">Try a different name, brand, or category.</p>
@@ -433,13 +437,13 @@ const Navbar = () => {
                 value={searchQuery}
                 onChange={(e) => handleSearchInputChange(e.target.value)}
                 onKeyDown={handleSearch}
-                onFocus={() => searchQuery.trim().length >= 2 && setShowSuggestions(true)}
+                onFocus={() => searchQuery.trim().length >= SEARCH_MIN_CHARS && setShowSuggestions(true)}
                 placeholder="Search by name, brand, or category..."
                 autoFocus
                 className="w-full rounded-full border border-[var(--line-soft)] bg-white px-4 py-3 text-sm outline-none"
               />
             </div>
-            {showSuggestions && isSearching && trimmedSearchQuery.length >= 2 && (
+            {showSuggestions && isSearching && trimmedSearchQuery.length >= SEARCH_MIN_CHARS && (
               <div className="mt-3 rounded-[1.25rem] border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-5 text-center">
                 <p className="text-sm font-semibold text-[var(--ink-900)]">Searching...</p>
                 <p className="mt-1 text-xs text-[var(--ink-500)]">Finding the closest product matches.</p>
@@ -473,7 +477,7 @@ const Navbar = () => {
               </div>
             )}
 
-            {showSuggestions && !isSearching && trimmedSearchQuery.length >= 2 && !hasSearchResults && (
+            {showSuggestions && !isSearching && trimmedSearchQuery.length >= SEARCH_MIN_CHARS && !hasSearchResults && (
               <div className="mt-3 rounded-[1.25rem] border border-dashed border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-5 text-center">
                 <p className="text-sm font-semibold text-[var(--ink-900)]">No products found</p>
                 <p className="mt-1 text-xs text-[var(--ink-500)]">Try a different name, brand, or category.</p>

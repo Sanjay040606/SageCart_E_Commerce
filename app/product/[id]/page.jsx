@@ -13,6 +13,7 @@ import { useAppContext } from "@/context/AppContext";
 import { useClerk } from "@clerk/nextjs";
 import { convertUSDToINR, formatPrice } from "@/lib/currencyUtils";
 import { resolveOrderProductId } from "@/lib/orderUtils";
+import { readPersistedAllProductsReturnToPath, sanitizeReturnToPath } from "@/lib/navigationUtils";
 import toast from "react-hot-toast";
 import {
   buildDatasetReviewCards,
@@ -31,6 +32,7 @@ import {
   normalizeProductImageUrl
 } from "@/lib/productDisplay";
 import { dedupeCatalogProducts } from "@/lib/productCatalog";
+import { useSearchParams } from "next/navigation";
 
 const RELATED_PRODUCTS_PER_PAGE = 6;
 
@@ -39,6 +41,7 @@ const isManualCatalogProduct = (product = {}) =>
 
 const Product = () => {
   const { id } = useParams();
+  const searchParams = useSearchParams();
   const { products, router, addToCart, currency, user, wishlistItems, toggleWishlist } = useAppContext();
   const resolvedProductId = resolveOrderProductId(id);
   const productId = resolvedProductId || id;
@@ -209,12 +212,26 @@ const Product = () => {
   );
   const relatedStart = relatedProducts.length === 0 ? 0 : ((safeRelatedPage - 1) * RELATED_PRODUCTS_PER_PAGE) + 1;
   const relatedEnd = relatedProducts.length === 0 ? 0 : Math.min(safeRelatedPage * RELATED_PRODUCTS_PER_PAGE, relatedProducts.length);
+  const returnToShopPath = sanitizeReturnToPath(searchParams.get("returnTo"));
+  const [resolvedReturnToShopPath, setResolvedReturnToShopPath] = useState(returnToShopPath);
 
   useEffect(() => {
     if (relatedPage > totalRelatedPages) {
       setRelatedPage(totalRelatedPages);
     }
   }, [relatedPage, totalRelatedPages]);
+
+  useEffect(() => {
+    if (returnToShopPath !== "/all-products") {
+      setResolvedReturnToShopPath(returnToShopPath);
+      return;
+    }
+
+    const persistedReturnToPath = readPersistedAllProductsReturnToPath();
+    if (persistedReturnToPath && persistedReturnToPath !== "/all-products") {
+      setResolvedReturnToShopPath(persistedReturnToPath);
+    }
+  }, [returnToShopPath]);
 
   const addSelectedProductToCart = () => {
     if (!isAvailable) {
@@ -251,7 +268,7 @@ const Product = () => {
               </p>
               <button
                 type="button"
-                onClick={() => router.push("/all-products")}
+                onClick={() => router.push(resolvedReturnToShopPath)}
                 className="brand-button mt-6 px-6 py-3"
               >
                 Back to shop
@@ -586,7 +603,7 @@ const Product = () => {
               )}
             </>
           )}
-          <Link href="/all-products" className="text-sm text-[var(--accent-strong)] hover:underline -mt-8 mb-16">
+          <Link href={resolvedReturnToShopPath} className="text-sm text-[var(--accent-strong)] hover:underline -mt-8 mb-16">
             View all products
           </Link>
         </div>

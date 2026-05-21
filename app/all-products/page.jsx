@@ -4,6 +4,7 @@ import { dedupeCatalogProducts } from "@/lib/productCatalog";
 import { buildCatalogSummaryPipeline } from "@/lib/productApi";
 import { getCachedCatalogSnapshot, setCachedCatalogSnapshot } from "@/lib/catalogSnapshot";
 import { isCatalogProductVisible } from "@/lib/productVariantRules";
+import { buildCatalogListResponse } from "@/lib/catalogList";
 import AllProductsClient from "@/components/AllProductsClient";
 
 const PRODUCTS_PER_PAGE = 20;
@@ -50,15 +51,6 @@ const readInitialUrlState = (searchParams = {}) => ({
   currentPage: parsePageParam(searchParams.page)
 });
 
-const isDefaultCatalogState = (state) =>
-  state.searchQuery === "" &&
-  state.activeCategory === "all" &&
-  state.stockFilter === "all" &&
-  state.ratingFilter === "all" &&
-  state.priceBand === "all" &&
-  state.sortBy === "featured" &&
-  state.currentPage === 1;
-
 const buildCatalogStats = (catalogProducts = []) => ({
   totalProducts: catalogProducts.length,
   categories: Array.from(
@@ -70,30 +62,20 @@ const buildCatalogStats = (catalogProducts = []) => ({
   ).sort((a, b) => a.localeCompare(b))
 });
 
-const buildInitialCatalogResponseFromProducts = (catalogProducts = []) => {
-  const totalProducts = catalogProducts.length;
-  const totalPages = Math.max(1, Math.ceil(totalProducts / PRODUCTS_PER_PAGE));
-  const pagedProducts = catalogProducts.slice(0, PRODUCTS_PER_PAGE);
-
-  return {
-    products: pagedProducts,
-    pagination: {
-      page: 1,
-      limit: PRODUCTS_PER_PAGE,
-      total: totalProducts,
-      totalPages,
-      hasPrevious: false,
-      hasNext: totalPages > 1,
-      start: totalProducts === 0 ? 0 : 1,
-      end: pagedProducts.length
-    },
-    catalogStats: buildCatalogStats(catalogProducts)
-  };
-};
-
-const buildInitialCatalogResponseFromSnapshot = (snapshot) => {
+const buildInitialCatalogResponseFromSnapshot = (snapshot, urlState) => {
   const catalogProducts = Array.isArray(snapshot?.catalogProducts) ? snapshot.catalogProducts : [];
-  return buildInitialCatalogResponseFromProducts(catalogProducts);
+  return buildCatalogListResponse({
+    catalogProducts,
+    catalogStats: snapshot?.catalogStats,
+    searchQuery: urlState.searchQuery,
+    activeCategory: urlState.activeCategory,
+    stockFilter: urlState.stockFilter,
+    ratingFilter: urlState.ratingFilter,
+    priceBand: urlState.priceBand,
+    sortBy: urlState.sortBy,
+    currentPage: urlState.currentPage,
+    pageSize: PRODUCTS_PER_PAGE
+  });
 };
 
 const buildCatalogSnapshotFromDatabase = async () => {
@@ -115,23 +97,20 @@ const buildCatalogSnapshotFromDatabase = async () => {
 export default async function AllProductsPage({ searchParams }) {
   const resolvedSearchParams = await Promise.resolve(searchParams || {});
   const initialUrlState = readInitialUrlState(resolvedSearchParams);
-  const shouldHydrateCatalog = isDefaultCatalogState(initialUrlState);
-
   let initialCatalogResponse = EMPTY_CATALOG_RESPONSE;
 
-  if (shouldHydrateCatalog) {
-    const cachedSnapshot = getCachedCatalogSnapshot();
-    if (cachedSnapshot?.catalogProducts?.length > 0) {
-      initialCatalogResponse = buildInitialCatalogResponseFromSnapshot(cachedSnapshot);
-    } else {
-      const dbSnapshot = await buildCatalogSnapshotFromDatabase();
-      initialCatalogResponse = buildInitialCatalogResponseFromSnapshot(dbSnapshot);
-    }
+  const cachedSnapshot = getCachedCatalogSnapshot();
+  if (cachedSnapshot?.catalogProducts?.length > 0) {
+    initialCatalogResponse = buildInitialCatalogResponseFromSnapshot(cachedSnapshot, initialUrlState);
+  } else {
+    const dbSnapshot = await buildCatalogSnapshotFromDatabase();
+    initialCatalogResponse = buildInitialCatalogResponseFromSnapshot(dbSnapshot, initialUrlState);
   }
 
   return (
     <AllProductsClient
       initialCatalogResponse={initialCatalogResponse}
+      initialCatalogReady={true}
       searchParams={resolvedSearchParams}
     />
   );
